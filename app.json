@@ -5,6 +5,18 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "attendtrack",
-    "platforms": ["ios", "android"]
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "09b1b924-a774-4031-98fb-1a946a4df585"
+      }
+    },
+    "owner": "najas",
+    "android": {
+      "package": "com.najas.attendtrackemployee"
+    }
   }
 }
