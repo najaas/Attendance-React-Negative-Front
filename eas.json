@@ -2,11 +2,17 @@
   "cli": { "version": ">=3.0.0" },
   "build": {
     "preview": {
-      "android": { "buildType": "apk" }
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.199:5001/api"
+      }
     },
     "dev": {
       "developmentClient": true,
-      "android": { "buildType": "apk", "distribution": "internal" }
+      "android": { "buildType": "apk", "distribution": "internal" },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.199:5001/api"
+      }
     }
   }
 }
