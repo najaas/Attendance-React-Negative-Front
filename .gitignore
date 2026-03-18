@@ -1,0 +1,7 @@
+# Dependencies & cache
+node_modules/
+.expo/
+
+# Env & build outputs
+.env
+dist/

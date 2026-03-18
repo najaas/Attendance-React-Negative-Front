@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "AttendTrack Employee",
+    "slug": "attendtrack-employee",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "attendtrack",
+    "platforms": ["ios", "android"]
+  }
+}
