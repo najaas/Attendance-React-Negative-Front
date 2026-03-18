@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { loadToken, saveToken, clearToken, decodeJwt } from '../../lib/auth';
-import { apiFetch } from '../../lib/api';
+import { loadToken, saveToken, clearToken } from '../../lib/auth';
 
 const AuthContext = createContext(null);
 
@@ -13,17 +12,17 @@ export function AuthProvider({ children }) {
     loadToken().then((t) => {
       if (t) {
         setToken(t);
-        setUser(decodeJwt(t));
+        setUser({ username: 'offline', role: 'employee' });
       }
       setLoading(false);
     });
   }, []);
 
   const login = async (username, password) => {
-    const data = await apiFetch('/login', { method: 'POST', body: { username, password } });
-    await saveToken(data.token);
-    setToken(data.token);
-    setUser(decodeJwt(data.token));
+    const fakeToken = 'offline-demo-token';
+    await saveToken(fakeToken);
+    setToken(fakeToken);
+    setUser({ username, role: 'employee' });
   };
 
   const logout = async () => {
