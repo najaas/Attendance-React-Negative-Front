@@ -4,14 +4,14 @@
     "preview": {
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.199:5001/api"
+        "EXPO_PUBLIC_API_BASE_URL": "https://yourapp.vercel.app/api"
       }
     },
     "dev": {
       "developmentClient": true,
       "android": { "buildType": "apk", "distribution": "internal" },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.199:5001/api"
+        "EXPO_PUBLIC_API_BASE_URL": "https://yourapp.vercel.app/api"
       }
     }
   }
