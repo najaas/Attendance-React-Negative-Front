@@ -7,7 +7,8 @@
     "scheme": "attendtrack",
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
     "extra": {
       "eas": {
@@ -17,6 +18,9 @@
     "owner": "najas",
     "android": {
       "package": "com.najas.attendtrackemployee"
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }
