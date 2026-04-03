@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
 import { Link, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,9 +44,10 @@ export default function SideMenu({ open, onClose, onLogout }) {
 
       <Animated.View style={[s.drawer, { transform: [{ translateX: slideX }] }]}>
         <View style={s.header}>
-          <View style={s.brandIcon}>
-            <Ionicons name="sparkles-outline" size={18} color="#0f172a" />
-          </View>
+          <Image
+            source={require('../../Assets/icon.png')}
+            style={{ width: 44, height: 44, borderRadius: 14, resizeMode: 'contain', marginRight: 10 }}
+          />
           <View style={{ flex: 1 }}>
             <Text style={s.brand}>PACIFIC</Text>
             <Text style={s.brandSub}>Mobile Portal</Text>

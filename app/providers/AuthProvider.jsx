@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { apiFetch } from '../../lib/api';
 import { clearToken, decodeJwt, loadToken, saveToken } from '../../lib/auth';
+import { getExpoPushTokenSafe } from '../../lib/notifications';
 
 const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
@@ -34,14 +36,50 @@ export function AuthProvider({ children }) {
       await saveToken(data.token);
       setToken(data.token);
       setUser(decodeJwt(data.token));
+      registerDevicePushToken(data.token).catch(() => {});
     }
     return data;
   };
 
   const logout = async () => {
+    if (token) {
+      const expoPushToken = await getExpoPushTokenSafe();
+      if (expoPushToken) {
+        apiFetch('/mobile/push-token', {
+          method: 'DELETE',
+          token,
+          body: { expoPushToken }
+        }).catch(() => {});
+      }
+    }
     await clearToken();
     setToken(null);
     setUser(null);
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+
+    (async () => {
+      if (!active) return;
+      registerDevicePushToken(token).catch(() => {});
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  const registerDevicePushToken = async (authToken) => {
+    if (!authToken) return;
+    const expoPushToken = await getExpoPushTokenSafe();
+    if (!expoPushToken) return;
+    await apiFetch('/mobile/push-token', {
+      method: 'POST',
+      token: authToken,
+      body: { expoPushToken, platform: Platform.OS }
+    });
   };
 
   return (

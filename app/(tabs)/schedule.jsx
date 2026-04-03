@@ -88,7 +88,7 @@ export default function Schedule() {
         const k = [r.projectName,r.customerName,r.customerPerson,r.customerContact,r.jobNumber,r.description,r.site,r.officeTime,r.siteTime,r.location,r.vehicle].join('||');
         if (!map.has(k)) map.set(k, { ...r, technicians: [] });
         const e = map.get(k);
-        const t = r.assignedToName || r.assignedToUsername || '';
+        const t = r.assignedToShortName || r.assignedToName || r.assignedToUsername || '';
         if (t && !e.technicians.includes(t)) e.technicians.push(t);
       });
       return [...map.values()];

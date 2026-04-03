@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Modal, Alert, StatusBar,
-  useWindowDimensions
+  useWindowDimensions, FlatList
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { Redirect } from 'expo-router';
@@ -38,9 +38,10 @@ const zonedNow = () => {
 
 const EMPTY_RECORD = { officeEntryTime: '', officeExitTime: '', sites: [] };
 const EMPTY_SITE = { location: '', jobNumber: '', entry: '', exit: '', projectName: '', customerName: '', vehicle: '' };
-
-const HH = Array.from({length: 24}, (_, i) => String(i).padStart(2, '0'));
+const EMPTY_SHIFT = { officeEntryTime: '', officeExitTime: '', sites: [{ ...EMPTY_SITE }] };
+const HH_12 = Array.from({length: 12}, (_, i) => String(i === 0 ? 12 : i).padStart(2, '0'));
 const MM = Array.from({length: 60}, (_, i) => String(i).padStart(2, '0'));
+const PERIODS = ['AM', 'PM'];
 
 function nowRounded() {
   const d = zonedNow();
@@ -64,6 +65,17 @@ function formatDisplay(val24) {
     const mer = h24 >= 12 ? 'PM' : 'AM';
     return `${String(h12).padStart(2, '0')}:${String(m || 0).padStart(2, '0')} ${mer}`;
   } catch(e) { return val24; }
+}
+
+function truncateText(text, max = 56) {
+  const value = String(text || '').trim();
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}...`;
+}
+
+function jobOptionLabel(job) {
+  const title = `${job?.projectName || 'Task'}${job?.jobNumber ? ` (#${job.jobNumber})` : ''}`;
+  return truncateText(title, 58);
 }
 
 function parseRecord(record) {
@@ -92,6 +104,72 @@ function parseRecord(record) {
     officeEntrySubmitTs: record.officeEntrySubmitTs,
     officeExitSubmitTs: record.officeExitSubmitTs,
   };
+}
+
+function parseExtraShift(record, prefix = 's2_') {
+  if (!record) return { ...EMPTY_SHIFT };
+  const sites = [];
+  for (let i = 1; i <= 6; i++) {
+    const loc = record[`${prefix}site${i}Location`];
+    if (loc || record[`${prefix}site${i}Entry`] || record[`${prefix}site${i}Exit`] || record[`${prefix}site${i}JobNumber`]) {
+      sites.push({
+        location: loc || '',
+        jobNumber: record[`${prefix}site${i}JobNumber`] || '',
+        entry: record[`${prefix}site${i}Entry`] || '',
+        exit: record[`${prefix}site${i}Exit`] || '',
+        projectName: record[`${prefix}site${i}ProjectName`] || '',
+        customerName: record[`${prefix}site${i}CustomerName`] || '',
+        vehicle: record[`${prefix}site${i}Vehicle`] || '',
+        entrySubmitTs: record[`${prefix}site${i}EntrySubmitTs`],
+        exitSubmitTs: record[`${prefix}site${i}ExitSubmitTs`],
+      });
+    }
+  }
+  return {
+    officeEntryTime: record[`${prefix}officeEntryTime`] || '',
+    officeExitTime: record[`${prefix}officeExitTime`] || '',
+    sites: sites.length > 0 ? sites : [{ ...EMPTY_SITE }],
+    officeEntrySubmitTs: record[`${prefix}officeEntrySubmitTs`],
+    officeExitSubmitTs: record[`${prefix}officeExitSubmitTs`],
+  };
+}
+
+function buildExtraShiftPayload(date, form, existing, submitMetadata, currentLoc, currentTs, prefix = 's2_') {
+  const p = { date, [`${prefix}officeEntryTime`]: form.officeEntryTime || '', [`${prefix}officeExitTime`]: form.officeExitTime || '' };
+  const ext = existing ? parseExtraShift(existing, prefix) : null;
+  const getMeta = (k) => {
+    const m = submitMetadata[k];
+    if (m && m.lat) return m;
+    if (currentLoc && currentLoc.lat) return { ts: m?.ts || currentTs, lat: currentLoc.lat, lng: currentLoc.lng };
+    return { ts: m?.ts || currentTs, lat: m?.lat, lng: m?.lng };
+  };
+  if (p[`${prefix}officeEntryTime`] && (!ext || !ext.officeEntrySubmitTs)) {
+    const { ts, lat, lng } = getMeta(`${prefix}officeEntry`);
+    if (ts) { p[`${prefix}officeEntrySubmitTs`] = ts; if (lat) { p[`${prefix}officeEntrySubmitLat`] = lat; p[`${prefix}officeEntrySubmitLng`] = lng; } }
+  }
+  if (p[`${prefix}officeExitTime`] && (!ext || !ext.officeExitSubmitTs)) {
+    const { ts, lat, lng } = getMeta(`${prefix}officeExit`);
+    if (ts) { p[`${prefix}officeExitSubmitTs`] = ts; if (lat) { p[`${prefix}officeExitSubmitLat`] = lat; p[`${prefix}officeExitSubmitLng`] = lng; } }
+  }
+  form.sites.forEach((s, i) => {
+    const idx = i + 1;
+    p[`${prefix}site${idx}Location`] = s.location || '';
+    p[`${prefix}site${idx}JobNumber`] = s.jobNumber || '';
+    p[`${prefix}site${idx}Entry`] = s.entry || '';
+    p[`${prefix}site${idx}Exit`] = s.exit || '';
+    p[`${prefix}site${idx}ProjectName`] = s.projectName || '';
+    p[`${prefix}site${idx}CustomerName`] = s.customerName || '';
+    const extS = ext && ext.sites && ext.sites[i] ? ext.sites[i] : null;
+    if (s.entry && (!extS || !extS.entrySubmitTs)) {
+      const { ts, lat, lng } = getMeta(`${prefix}site${idx}Entry`);
+      if (ts) { p[`${prefix}site${idx}EntrySubmitTs`] = ts; if (lat) { p[`${prefix}site${idx}EntrySubmitLat`] = lat; p[`${prefix}site${idx}EntrySubmitLng`] = lng; } }
+    }
+    if (s.exit && (!extS || !extS.exitSubmitTs)) {
+      const { ts, lat, lng } = getMeta(`${prefix}site${idx}Exit`);
+      if (ts) { p[`${prefix}site${idx}ExitSubmitTs`] = ts; if (lat) { p[`${prefix}site${idx}ExitSubmitLat`] = lat; p[`${prefix}site${idx}ExitSubmitLng`] = lng; } }
+    }
+  });
+  return p;
 }
 
 function buildPayload(date, form, existing, submitMetadata, currentLoc, currentTs) {
@@ -146,9 +224,37 @@ export default function Attendance() {
   const [form, setForm] = React.useState({ ...EMPTY_RECORD });
   const [existing, setExisting] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
+  const [extraForms, setExtraForms] = React.useState({ s2_: { ...EMPTY_SHIFT }, s3_: { ...EMPTY_SHIFT }, s4_: { ...EMPTY_SHIFT }, s5_: { ...EMPTY_SHIFT } });
+  const [showRounds, setShowRounds] = React.useState({ s2_: false, s3_: false, s4_: false, s5_: false });
 
   // Time Picker State
-  const [pickModal, setPickModal] = React.useState({ open: false, field: '', val: '', index: -1 });
+  const [pickModal, setPickModal] = React.useState({ open: false, field: '', h: '12', m: '00', ampm: 'AM', index: -1 });
+  const repeatRef = React.useRef(null);
+
+  const stopRepeat = () => {
+    if (repeatRef.current) clearInterval(repeatRef.current);
+    repeatRef.current = null;
+  };
+
+  const adjustDigit = (key, dir) => {
+    setPickModal(p => {
+      let val = parseInt(p[key]) + dir;
+      if (key === 'h') {
+        if (val > 12) val = 1;
+        if (val < 1) val = 12;
+      } else {
+        if (val > 59) val = 0;
+        if (val < 0) val = 59;
+      }
+      return { ...p, [key]: String(val).padStart(2, '0') };
+    });
+  };
+
+  const startRepeat = (key, dir) => {
+    stopRepeat();
+    adjustDigit(key, dir);
+    repeatRef.current = setInterval(() => adjustDigit(key, dir), 120);
+  };
 
   // Custom Status Modal State
   const [statusModal, setStatusModal] = React.useState({ open: false, title: '', message: '', type: 'success' });
@@ -177,7 +283,64 @@ export default function Attendance() {
     } finally { setBusy(false); }
   }, [token, date, user]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (existing) {
+      const eForms = {};
+      ['s2_', 's3_', 's4_', 's5_'].forEach(p => {
+        eForms[p] = parseExtraShift(existing, p);
+      });
+      setExtraForms(eForms);
+      // Only reveal rounds that have data; never hide ones already shown
+      setShowRounds(prev => {
+        const next = { ...prev };
+        ['s2_', 's3_', 's4_', 's5_'].forEach(p => {
+          if (existing[`${p}officeEntryTime`]) next[p] = true;
+        });
+        return next;
+      });
+    }
+  }, [existing]);
+
+  const updateExtraSite = (prefix, i, k, v) => setExtraForms((p) => {
+    const rf = { ...p[prefix] };
+    const s = [...rf.sites]; s[i] = { ...s[i], [k]: v };
+    return { ...p, [prefix]: { ...rf, sites: s } };
+  });
+
+  const submitExtraAction = async (prefix, actionKey, dataOverrides = {}) => {
+    setBusy(true);
+    let _loc = null;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        try {
+          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 8000 });
+          _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
+        } catch (e) {
+          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest, timeout: 4000 });
+          _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
+        }
+      }
+    } catch (e) {}
+    const _ts = new Date().toLocaleString('en-US', { timeZone: APP_TIMEZONE });
+    const meta = { [actionKey]: { ts: _ts, lat: _loc?.lat, lng: _loc?.lng } };
+    const activeForm = { ...extraForms[prefix], ...dataOverrides };
+    try {
+      const data = await apiFetch('/attendance/employee-attendance', {
+        method: 'PUT', token,
+        body: buildExtraShiftPayload(date, activeForm, existing, meta, _loc, _ts, prefix),
+      });
+      setExisting(data);
+      setExtraForms(p => ({ ...p, [prefix]: parseExtraShift(data, prefix) }));
+      setStatusModal({ open: true, title: 'Round Logged', message: 'Shift data securely stored.', type: 'success' });
+    } catch (e) {
+      setStatusModal({ open: true, title: 'Connection Failed', message: e.message || 'Unavailable', type: 'error' });
+    } finally { setBusy(false); }
+  };
 
   if (!token) return <Redirect href="/login" />;
 
@@ -186,16 +349,36 @@ export default function Attendance() {
   });
 
   const openPicker = (field, currentVal, index = -1) => {
-    setPickModal({ open: true, field, val: currentVal || nowRounded(), index });
+    let [h24, m] = (currentVal || nowRounded()).split(':');
+    h24 = parseInt(h24 || '0');
+    const ampm = h24 >= 12 ? 'PM' : 'AM';
+    let h12 = h24 % 12;
+    if (h12 === 0) h12 = 12;
+    setPickModal({ 
+      open: true, field, 
+      h: String(h12).padStart(2, '0'), 
+      m: String(m || '00').padStart(2, '0'), 
+      ampm, index 
+    });
   };
 
   const savePicker = () => {
-    const { field, val, index } = pickModal;
+    const { field, h, m, ampm, index } = pickModal;
+    let h24 = parseInt(h);
+    if (ampm === 'PM' && h24 < 12) h24 += 12;
+    if (ampm === 'AM' && h24 === 12) h24 = 0;
+    const val = `${String(h24).padStart(2, '0')}:${m}`;
+    
     if (field === 'officeEntryTime') setForm(p => ({ ...p, officeEntryTime: val }));
     else if (field === 'officeExitTime') setForm(p => ({ ...p, officeExitTime: val }));
     else if (field === 'siteEntry') updateSite(index, 'entry', val);
     else if (field === 'siteExit') updateSite(index, 'exit', val);
-    setPickModal({ open: false, field: '', val: '', index: -1 });
+    else if (field.endsWith('siteEntry')) updateExtraSite(field.split('site')[0], index, 'entry', val);
+    else if (field.endsWith('siteExit')) updateExtraSite(field.split('site')[0], index, 'exit', val);
+    else if (field.endsWith('officeEntryTime')) setExtraForms(p => ({ ...p, [field.split('office')[0]]: { ...p[field.split('office')[0]], officeEntryTime: val } }));
+    else if (field.endsWith('officeExitTime')) setExtraForms(p => ({ ...p, [field.split('office')[0]]: { ...p[field.split('office')[0]], officeExitTime: val } }));
+    
+    setPickModal({ open: false, field: '', h: '12', m: '00', ampm: 'AM', index: -1 });
   };
 
   const submitAction = async (actionKey, dataOverrides = {}) => {
@@ -238,7 +421,6 @@ export default function Attendance() {
       <View style={s.headerContainer}>
         <View style={s.topNav}>
           <View style={s.systemBadge}><View style={s.pulseDot} /><Text style={s.systemBadgeText}>LIVE ATTENDANCE ACCESS</Text></View>
-          
         </View>
         <Text style={s.headerName}>Hi, {user?.name?.split(' ')[0]}</Text>
         <Text style={s.headerDate}>{prettyToday()}</Text>
@@ -248,7 +430,6 @@ export default function Attendance() {
           <Text style={s.floatingLabel}>SYNCED PORTAL TIME</Text>
         </View>
       </View>
-
       <View style={s.content}>
         {/* Office Out Card */}
         <View style={[s.premiumCard, { borderTopColor: C.indigo, borderTopWidth: 4 }]}>
@@ -287,8 +468,7 @@ export default function Attendance() {
              </TouchableOpacity>
            )}
         </View>
-
-        {form.sites.map((site, i) => {
+        {(form.sites || []).map((site, i) => {
           const extS = existing && parseRecord(existing).sites[i] ? parseRecord(existing).sites[i] : null;
           return (
             <View key={i} style={s.nodeCard}>
@@ -320,7 +500,7 @@ export default function Attendance() {
                          {myJobs.map((job, jIdx) => (
                             <Picker.Item 
                                key={jIdx} 
-                               label={`${job.projectName || 'Task'}${job.jobNumber ? ` (#${job.jobNumber})` : ''}${job.customerName ? ` - ${job.customerName}` : ''}${job.customerPerson ? ` (${job.customerPerson})` : ''}`} 
+                               label={jobOptionLabel(job)}
                                value={`${job.projectName || ''}||${job.jobNumber || ''}`} 
                                color={C.indigo}
                             />
@@ -408,6 +588,164 @@ export default function Attendance() {
         </View>
 
         {busy && <View style={s.loader}><ActivityIndicator size="large" color={C.indigo} /></View>}
+
+        {!!existing?.officeExitSubmitTs && !['s2_', 's3_', 's4_', 's5_'].some(p => showRounds[p] && !existing[`${p}officeExitSubmitTs`]) && !!['s2_', 's3_', 's4_', 's5_'].find(p => !showRounds[p]) && (
+          <TouchableOpacity
+            style={{ marginTop: 10, marginBottom: 20, backgroundColor: '#0f172a', borderRadius: 20, paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10 }}
+            onPress={() => {
+              const nextP = ['s2_', 's3_', 's4_', 's5_'].find(p => !showRounds[p]);
+              if (nextP) setShowRounds(prev => ({ ...prev, [nextP]: true }));
+            }}
+          >
+            <Text style={{ fontSize: 20 }}>🔄</Text>
+            <Text style={{ color: '#fbbf24', fontWeight: '900', fontSize: 14, letterSpacing: 1 }}>START NEXT ROUND</Text>
+          </TouchableOpacity>
+        )}
+
+        {Object.keys(showRounds).map(prefix => {
+          if (!showRounds[prefix]) return null;
+          const rNum = parseInt(prefix.replace('s', ''));
+          const cMain = rNum === 2 ? '#f59e0b' : rNum === 3 ? '#10b981' : rNum === 4 ? '#8b5cf6' : '#ec4899';
+          const cBg   = rNum === 2 ? '#fffbeb' : rNum === 3 ? '#ecfdf5' : rNum === 4 ? '#f5f3ff' : '#fdf2f8';
+          const cText = rNum === 2 ? '#92400e' : rNum === 3 ? '#064e3b' : rNum === 4 ? '#4c1d95' : '#831843';
+          const cBtn  = rNum === 2 ? '#d97706' : rNum === 3 ? '#059669' : rNum === 4 ? '#7c3aed' : '#db2777';
+          const shiftForm = extraForms[prefix];
+
+          return (
+            <View key={prefix} style={{ borderWidth: 2, borderColor: cMain, borderRadius: 30, padding: 4, marginTop: 10, marginBottom: 10 }}>
+              <View style={{ backgroundColor: cBg, borderRadius: 26, padding: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                  <Text style={{ fontSize: 22 }}>🔄</Text>
+                  <View>
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: cText, letterSpacing: 1.5 }}>CONTINUATION SHIFT</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#0f172a' }}>ROUND {rNum} — SAME DAY</Text>
+                  </View>
+                </View>
+
+                {/* Shift Office Out */}
+                <View style={[s.premiumCard, { borderTopColor: cMain, borderTopWidth: 3, marginBottom: 15 }]}>
+                  <Text style={[s.cardCaption, { color: cText }]}>ROUND {rNum} — BASE OPS</Text>
+                  <Text style={s.cardMainTitle}>OFFICE OUT (Round {rNum})</Text>
+                  {existing?.[`${prefix}officeEntrySubmitTs`] ? (
+                    <View style={s.lockedView}>
+                      <Text style={s.lockedVal}>{formatDisplay(existing[`${prefix}officeEntryTime`])}</Text>
+                      <View style={[s.lockedTag, { backgroundColor: cBg }]}><Text style={[s.lockedTagText, { color: cBtn }]}>📍 LOCKED</Text></View>
+                    </View>
+                  ) : (
+                    <View style={[s.actionRow, { marginTop: 15 }]}>
+                      <View style={s.inputGroup}>
+                        <TouchableOpacity style={s.pickerBtn} onPress={() => openPicker(`${prefix}officeEntryTime`, shiftForm.officeEntryTime)}>
+                          <Text style={[s.pickerBtnText, !shiftForm.officeEntryTime && { color: C.slate }]}>{shiftForm.officeEntryTime || '00:00'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setExtraForms(p => ({ ...p, [prefix]: { ...p[prefix], officeEntryTime: nowRounded() } }))} style={s.nowBtn}>
+                          <Text style={s.nowBtnText}>NOW ⌚</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity style={[s.primaryBtn, { backgroundColor: cMain }]} onPress={() => submitExtraAction(prefix, `${prefix}officeEntry`, { officeEntryTime: shiftForm.officeEntryTime || nowRounded() })} disabled={busy}>
+                        <Text style={s.primaryBtnText}>LOG ROUND {rNum} OUT</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {/* Shift Sites */}
+                <View style={s.sectionHeader}>
+                  <Text style={s.sectionLabel}>ROUND {rNum} SITES</Text>
+                  {!existing?.[`${prefix}officeExitSubmitTs`] && (
+                    <TouchableOpacity style={[s.addNodeBtn, { backgroundColor: cMain }]} onPress={() => setExtraForms(p => ({ ...p, [prefix]: { ...p[prefix], sites: [...p[prefix].sites, { location: '', jobNumber: '', entry: '', exit: '', projectName: '', customerName: '', vehicle: '' }] } }))}>
+                      <Text style={s.addNodeText}>+ ADD SITE</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {shiftForm.sites.map((site, i) => {
+                  const extS = existing ? parseExtraShift(existing, prefix).sites[i] : null;
+                  return (
+                    <View key={i} style={[s.nodeCard, { borderLeftColor: cMain, borderLeftWidth: 2 }]}>
+                      <View style={s.nodeCardHeader}>
+                        <Text style={s.nodeTitle}>R{rNum} SITE {i + 1}</Text>
+                        {!extS?.entrySubmitTs && (
+                          <TouchableOpacity onPress={() => setExtraForms(p => ({ ...p, [prefix]: { ...p[prefix], sites: p[prefix].sites.filter((_, idx) => idx !== i) } }))}>
+                            <Text style={s.removeText}>DISCARD</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <View style={{ gap: 8, marginBottom: 15 }}>
+                        <TextInput style={s.nodeInp} placeholder="Project Name..." value={site.projectName} onChangeText={v => { updateExtraSite(prefix, i, 'projectName', v); updateExtraSite(prefix, i, 'location', v); }} editable={!extS?.entrySubmitTs} placeholderTextColor={C.slate} />
+                        <TextInput style={s.nodeInp} placeholder="Job Number..." value={site.jobNumber} onChangeText={v => updateExtraSite(prefix, i, 'jobNumber', v)} editable={!extS?.entrySubmitTs} placeholderTextColor={C.slate} />
+                      </View>
+                      <View style={s.clockGrid}>
+                        <View style={[s.clockCell, { backgroundColor: extS?.entrySubmitTs ? C.bg : cBg }]}>
+                          <Text style={[s.clockCellLabel, { color: cBtn }]}>SITE (IN)</Text>
+                          {extS?.entrySubmitTs ? <Text style={s.clockVal}>{formatDisplay(site.entry)}</Text> : (
+                            <View style={s.clockAction}>
+                              <View style={s.microInputRow}>
+                                <TouchableOpacity style={s.microPicker} onPress={() => openPicker(`${prefix}siteEntry`, site.entry, i)}>
+                                  <Text style={[s.microPickerText, !site.entry && { color: '#cbd5e1' }]}>{site.entry || '00:00'}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => updateExtraSite(prefix, i, 'entry', nowRounded())} style={s.microNow}><Text style={s.microNowText}>NOW ⌚</Text></TouchableOpacity>
+                              </View>
+                              <TouchableOpacity style={[s.actionBtn, { backgroundColor: cMain }]} onPress={() => {
+                                const ns = [...shiftForm.sites]; ns[i].entry = site.entry || nowRounded();
+                                submitExtraAction(prefix, `${prefix}site${i + 1}Entry`, { sites: ns });
+                              }}><Text style={s.actionBtnText}>LOG</Text></TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                        <View style={[s.clockCell, { backgroundColor: extS?.exitSubmitTs ? C.bg : '#fef3c7' }]}>
+                          <Text style={[s.clockCellLabel, { color: cBtn }]}>SITE (OUT)</Text>
+                          {extS?.exitSubmitTs ? <Text style={s.clockVal}>{formatDisplay(site.exit)}</Text> : (
+                            <View style={s.clockAction}>
+                              <View style={s.microInputRow}>
+                                <TouchableOpacity disabled={!site.entry} style={[s.microPicker, { opacity: site.entry ? 1 : 0.5 }]} onPress={() => openPicker(`${prefix}siteExit`, site.exit, i)}>
+                                  <Text style={[s.microPickerText, !site.exit && { color: '#cbd5e1' }]}>{site.exit || '00:00'}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity disabled={!site.entry} onPress={() => updateExtraSite(prefix, i, 'exit', nowRounded())} style={[s.microNow, { opacity: site.entry ? 1 : 0.5 }]}><Text style={s.microNowText}>NOW ⌚</Text></TouchableOpacity>
+                              </View>
+                              <TouchableOpacity style={[s.actionBtn, { backgroundColor: cBtn, opacity: site.entry ? 1 : 0.5 }]} disabled={!site.entry} onPress={() => {
+                                const ns = [...shiftForm.sites]; ns[i].exit = site.exit || nowRounded();
+                                submitExtraAction(prefix, `${prefix}site${i + 1}Exit`, { sites: ns });
+                              }}><Text style={s.actionBtnText}>LOG</Text></TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {/* Shift Office In */}
+                <View style={[s.premiumCard, { borderTopColor: C.green, borderTopWidth: 3 }]}>
+                  <Text style={[s.cardCaption, { color: C.green }]}>ROUND {rNum} CLOSURE</Text>
+                  <Text style={s.cardMainTitle}>OFFICE IN (Round {rNum})</Text>
+                  {existing?.[`${prefix}officeExitSubmitTs`] ? (
+                    <View style={s.lockedView}>
+                      <Text style={s.lockedVal}>{formatDisplay(existing[`${prefix}officeExitTime`])}</Text>
+                      <View style={[s.lockedTag, { backgroundColor: C.greenBg }]}><Text style={[s.lockedTagText, { color: C.green }]}>✅ ROUND {rNum} COMPLETE</Text></View>
+                    </View>
+                  ) : (
+                    <View style={[s.actionRow, { marginTop: 15 }]}>
+                      <View style={s.inputGroup}>
+                        <TouchableOpacity disabled={!existing?.[`${prefix}officeEntryTime`]} style={[s.pickerBtn, { opacity: existing?.[`${prefix}officeEntryTime`] ? 1 : 0.5 }]} onPress={() => openPicker(`${prefix}officeExitTime`, shiftForm.officeExitTime)}>
+                          <Text style={[s.pickerBtnText, !shiftForm.officeExitTime && { color: C.slate }]}>{shiftForm.officeExitTime || '00:00'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity disabled={!existing?.[`${prefix}officeEntryTime`]} onPress={() => setExtraForms(p => ({ ...p, [prefix]: { ...p[prefix], officeExitTime: nowRounded() } }))} style={[s.nowBtn, { opacity: existing?.[`${prefix}officeEntryTime`] ? 1 : 0.5 }]}>
+                          <Text style={s.nowBtnText}>NOW ⌚</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity style={[s.primaryBtn, { backgroundColor: C.green, opacity: existing?.[`${prefix}officeEntryTime`] ? 1 : 0.5 }]}
+                        disabled={busy || !existing?.[`${prefix}officeEntryTime`]}
+                        onPress={() => submitExtraAction(prefix, `${prefix}officeExit`, { officeExitTime: shiftForm.officeExitTime || nowRounded() })}>
+                        <Text style={s.primaryBtnText}>FINALIZE ROUND {rNum}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+          );
+        })}
+
       </View>
     </ScrollView>
 
@@ -418,45 +756,78 @@ export default function Attendance() {
              <View style={s.modalHeaderDecoration} />
              <View style={s.modalTitleRow}>
                 <View>
-                  <Text style={s.modalLabel}>PRECISION LOGGING</Text>
-                  <Text style={s.modalMainTitle}>Select Time</Text>
+                  <Text style={s.modalLabel}>PRECISION AUTHENTICATION</Text>
+                  <Text style={s.modalMainTitle}>Time Selection</Text>
                 </View>
                 <TouchableOpacity onPress={() => setPickModal({ ...pickModal, open: false })} style={s.modalCloseBtn}>
                   <Text style={{ color: C.muted, fontWeight: '900', fontSize: 16 }}>✕</Text>
                 </TouchableOpacity>
              </View>
-             
-             <View style={s.pickerContainer}>
-                <View style={s.pickerColumn}>
-                   <View style={s.pickerHeader}><Text style={s.pickerHeaderText}>HOUR</Text></View>
-                   <Picker 
-                      selectedValue={pickModal.val.split(':')[0]} 
-                      onValueChange={(h) => setPickModal({ ...pickModal, val: `${h}:${pickModal.val.split(':')[1] || '00'}` })}
-                      style={s.nativePicker}
-                      itemStyle={s.pickerItemStyle}
-                   >
-                      {HH.map(h => <Picker.Item key={h} label={h} value={h} color={C.navy} />)}
-                   </Picker>
-                </View>
-                
-                <View style={s.pickerDivider}>
-                   <Text style={s.pickerDividerText}>:</Text>
-                </View>
-                
-                <View style={s.pickerColumn}>
-                   <View style={s.pickerHeader}><Text style={s.pickerHeaderText}>MINUTE</Text></View>
-                   <Picker 
-                      selectedValue={pickModal.val.split(':')[1]} 
-                      onValueChange={(m) => setPickModal({ ...pickModal, val: `${pickModal.val.split(':')[0] || '00'}:${m}` })}
-                      style={s.nativePicker}
-                      itemStyle={s.pickerItemStyle}
-                   >
-                      {MM.map(m => <Picker.Item key={m} label={m} value={m} color={C.navy} />)}
-                   </Picker>
-                </View>
-             </View>
-             
-             <View style={s.modalFooter}>
+
+              <View style={s.hubContainer}>
+                 {/* AM/PM Switcher */}
+                 <View style={s.hubMeridiemRow}>
+                    {PERIODS.map(p => (
+                       <TouchableOpacity 
+                         key={p} 
+                         onPress={() => setPickModal(prev => ({ ...prev, ampm: p }))}
+                         style={[s.hubMeridiemTab, pickModal.ampm === p && s.hubMeridiemTabActive]}
+                       >
+                         <Text style={[s.hubMeridiemTabText, pickModal.ampm === p && s.hubMeridiemTabTextActive]}>{p}</Text>
+                       </TouchableOpacity>
+                    ))}
+                 </View>
+
+                 {/* Main Display Hub */}
+                 <View style={s.hubDisplayRow}>
+                    {/* Hour Column */}
+                    <View style={s.hubDigitCol}>
+                       <TouchableOpacity 
+                         activeOpacity={0.6}
+                         onPressIn={() => startRepeat('h', 1)}
+                         onPressOut={stopRepeat}
+                         style={s.hubAdjustBtn}
+                       ><Text style={s.hubAdjustIcon}>▴</Text></TouchableOpacity>
+                       
+                       <View style={s.hubDigitBox}>
+                         <Text style={s.hubDigitValue}>{pickModal.h}</Text>
+                         <Text style={s.hubDigitLabel}>HOUR</Text>
+                       </View>
+
+                       <TouchableOpacity 
+                         activeOpacity={0.6}
+                         onPressIn={() => startRepeat('h', -1)}
+                         onPressOut={stopRepeat}
+                         style={s.hubAdjustBtn}
+                       ><Text style={s.hubAdjustIcon}>▾</Text></TouchableOpacity>
+                    </View>
+
+                    <View style={s.hubSeparator}><Text style={s.hubSeparatorText}>:</Text></View>
+
+                    {/* Minute Column */}
+                    <View style={s.hubDigitCol}>
+                       <TouchableOpacity 
+                         activeOpacity={0.6}
+                         onPressIn={() => startRepeat('m', 1)}
+                         onPressOut={stopRepeat}
+                         style={s.hubAdjustBtn}
+                       ><Text style={s.hubAdjustIcon}>▴</Text></TouchableOpacity>
+                       
+                       <View style={s.hubDigitBox}>
+                         <Text style={s.hubDigitValue}>{pickModal.m}</Text>
+                         <Text style={s.hubDigitLabel}>MIN</Text>
+                       </View>
+
+                       <TouchableOpacity 
+                         activeOpacity={0.6}
+                         onPressIn={() => startRepeat('m', -1)}
+                         onPressOut={stopRepeat}
+                         style={s.hubAdjustBtn}
+                       ><Text style={s.hubAdjustIcon}>▾</Text></TouchableOpacity>
+                    </View>
+                 </View>
+              </View>
+                    <View style={s.modalFooter}>
                 <TouchableOpacity style={s.saveModalBtn} onPress={savePicker}>
                    <Text style={s.saveModalBtnText}>CONFIRM SELECTION</Text>
                 </TouchableOpacity>
@@ -464,7 +835,6 @@ export default function Attendance() {
           </View>
        </View>
     </Modal>
-
     {/* Custom Status Modal */}
     <Modal visible={statusModal.open} transparent animationType="fade">
        <View style={s.modalRoot}>
@@ -472,7 +842,6 @@ export default function Attendance() {
              <View style={[s.statusIconCircle, { backgroundColor: statusModal.type === 'error' ? '#fef2f2' : '#f0fdf4' }]}>
                 <Text style={{ fontSize: 32 }}>{statusModal.type === 'error' ? '❌' : '✅'}</Text>
              </View>
-             
              <Text style={s.statusTitle}>{statusModal.title}</Text>
              <Text style={s.statusMessage}>{statusModal.message}</Text>
              
@@ -554,19 +923,26 @@ const s = StyleSheet.create({
   modalMainTitle: { fontSize: 20, fontWeight: '900', color: C.navy },
   modalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' },
   
-  pickerContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 24 },
-  pickerColumn: { flex: 1, backgroundColor: '#fcfdfe', borderRadius: 20, borderWidth: 1, borderColor: '#f1f5f9', overflow: 'hidden' },
-  pickerHeader: { backgroundColor: '#f8fafc', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', alignItems: 'center' },
-  pickerHeaderText: { fontSize: 9, fontWeight: '900', color: C.muted, letterSpacing: 1 },
-  nativePicker: { width: '100%', height: 180 },
-  pickerItemStyle: { fontSize: 22, fontWeight: '800', color: C.navy, height: 180 },
+  hubContainer: { paddingHorizontal: 20, paddingBottom: 20 },
+  hubMeridiemRow: { flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 14, padding: 3, marginBottom: 15 },
+  hubMeridiemTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },
+  hubMeridiemTabActive: { backgroundColor: C.navy, elevation: 4 },
+  hubMeridiemTabText: { fontSize: 12, fontWeight: '900', color: C.slate },
+  hubMeridiemTabTextActive: { color: C.amber },
   
-  pickerDivider: { width: 30, alignItems: 'center' },
-  pickerDividerText: { fontSize: 24, fontWeight: '900', color: C.slate },
+  hubDisplayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', borderRadius: 20, paddingVertical: 25, paddingHorizontal: 10, borderWidth: 1, borderColor: '#e2e8f0' },
+  hubDigitCol: { alignItems: 'center', gap: 10 },
+  hubDigitBox: { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 16, minWidth: 80, alignItems: 'center', elevation: 2 },
+  hubDigitValue: { fontSize: 42, fontWeight: '900', color: C.navy, height: 52, textAlignVertical: 'center' },
+  hubDigitLabel: { fontSize: 7, fontWeight: '900', color: C.slate, letterSpacing: 1 },
+  hubAdjustBtn: { width: 40, height: 32, backgroundColor: '#f1f5f9', borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  hubAdjustIcon: { fontSize: 20, color: C.indigo, fontWeight: '900' },
+  hubSeparator: { marginHorizontal: 8 },
+  hubSeparatorText: { fontSize: 28, fontWeight: '900', color: C.slate, opacity: 0.3 },
   
-  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-  saveModalBtn: { backgroundColor: C.navy, paddingVertical: 16, borderRadius: 16, alignItems: 'center', shadowColor: C.navy, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10 },
-  saveModalBtnText: { color: '#fff', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
+  modalFooter: { padding: 24, paddingTop: 0 },
+  saveModalBtn: { backgroundColor: C.navy, paddingVertical: 18, borderRadius: 20, alignItems: 'center', shadowColor: C.navy, shadowOpacity: 0.3, shadowRadius: 10, elevation: 12 },
+  saveModalBtnText: { color: '#fff', fontWeight: '900', fontSize: 14, letterSpacing: 1 },
 
   // Status Modal Styles
   statusIconCircle: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Linking } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Linking } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../providers/AuthProvider';
 import { apiFetch } from '../../lib/api';
@@ -46,38 +46,49 @@ export default function Tasks() {
   const filtered = filter === 'all' ? tasks : filter === 'pending' ? tasks.filter(t => t.status !== 'completed') : tasks.filter(t => t.status === 'completed');
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={s.container}>
-      <Text style={s.pageTitle}>My Tasks</Text>
+    <View style={s.root}>
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id ? item.id.toString() : Math.random().toString()}
+        contentContainerStyle={s.container}
+        initialNumToRender={10}
+        windowSize={5}
+        ListHeaderComponent={
+          <>
+            <Text style={s.pageTitle}>My Tasks</Text>
 
-      <View style={s.summaryRow}>
-        {[{ num: counts.total, label: 'Total', color: C.indigo }, { num: counts.pending, label: 'Pending', color: C.red }, { num: counts.done, label: 'Done', color: C.green }].map((item) => (
-          <View key={item.label} style={[s.summaryCard, { borderLeftColor: item.color }]}>
-            <Text style={[s.summaryNum, { color: item.color }]}>{item.num}</Text>
-            <Text style={s.summaryLabel}>{item.label}</Text>
-          </View>
-        ))}
-      </View>
+            <View style={s.summaryRow}>
+              {[{ num: counts.total, label: 'Total', color: C.indigo }, { num: counts.pending, label: 'Pending', color: C.red }, { num: counts.done, label: 'Done', color: C.green }].map((item) => (
+                <View key={item.label} style={[s.summaryCard, { borderLeftColor: item.color }]}>
+                  <Text style={[s.summaryNum, { color: item.color }]}>{item.num}</Text>
+                  <Text style={s.summaryLabel}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
 
-      <View style={s.filterRow}>
-        {[['all', `All (${counts.total})`], ['pending', `Pending (${counts.pending})`], ['completed', `Done (${counts.done})`]].map(([id, label]) => (
-          <TouchableOpacity key={id} style={[s.filterBtn, filter === id && s.filterBtnActive]} onPress={() => setFilter(id)}>
-            <Text style={[s.filterBtnText, filter === id && s.filterBtnTextActive]}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <View style={s.filterRow}>
+              {[['all', `All (${counts.total})`], ['pending', `Pending (${counts.pending})`], ['completed', `Done (${counts.done})`]].map(([id, label]) => (
+                <TouchableOpacity key={id} style={[s.filterBtn, filter === id && s.filterBtnActive]} onPress={() => setFilter(id)}>
+                  <Text style={[s.filterBtnText, filter === id && s.filterBtnTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-      {busy && <ActivityIndicator color={C.indigo} style={{ marginVertical: 12 }} />}
-      {msg ? <View style={s.alertGreen}><Text style={s.alertGreenText}>✓  {msg}</Text></View> : null}
-      {err ? <View style={s.alertRed}><Text style={s.alertRedText}>{err}</Text></View> : null}
-
-      {filtered.length === 0 && !busy ? (
-        <View style={s.emptyBox}><Text style={s.emptyText}>No tasks in this category</Text></View>
-      ) : (
-        filtered.map((task) => {
+            {busy && <ActivityIndicator color={C.indigo} style={{ marginVertical: 12 }} />}
+            {msg ? <View style={s.alertGreen}><Text style={s.alertGreenText}>✓  {msg}</Text></View> : null}
+            {err ? <View style={s.alertRed}><Text style={s.alertRedText}>{err}</Text></View> : null}
+          </>
+        }
+        ListEmptyComponent={
+          !busy ? (
+            <View style={s.emptyBox}><Text style={s.emptyText}>No tasks in this category</Text></View>
+          ) : null
+        }
+        renderItem={({ item: task }) => {
           const done = task.status === 'completed';
           const gpsUrl = toGpsUrl(task.location || task.taskLocation);
           return (
-            <View key={task.id} style={[s.taskCard, { borderLeftColor: done ? C.green : C.red }]}>
+            <View style={[s.taskCard, { borderLeftColor: done ? C.green : C.red }]}>
               <View style={s.taskHead}>
                 <Text style={s.taskTitle} numberOfLines={2}>{task.title}</Text>
                 <View style={[s.badge, { backgroundColor: done ? C.greenBg : C.redBg }]}>
@@ -113,9 +124,9 @@ export default function Tasks() {
               )}
             </View>
           );
-        })
-      )}
-    </ScrollView>
+        }}
+      />
+    </View>
   );
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, usePathname } from 'expo-router';
 
@@ -14,9 +14,10 @@ export const NAV_ITEMS = [
 export default function TopNav() {
   return (
     <View style={s.shell}>
-      <View style={s.logoCircle}>
-        <Ionicons name="aperture" size={16} color="#0f172a" />
-      </View>
+      <Image
+        source={require('../../Assets/icon.png')}
+        style={{ width: 30, height: 30, borderRadius: 10, resizeMode: 'contain' }}
+      />
       <Text style={s.brand}>PACIFIC</Text>
     </View>
   );

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Tabs, Redirect } from 'expo-router';
+import { Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Tabs, Redirect } from 'expo-router';
 import { useAuth } from '../providers/AuthProvider';
 import TopNav from '../components/TopNav';
 import SideMenu from '../components/SideMenu';
@@ -32,12 +33,9 @@ export default function TabsLayout() {
           headerLeftContainerStyle: { paddingLeft: 8 },
           headerRightContainerStyle: { paddingRight: 8 },
           headerLeft: () => (
-            <Ionicons
-              name="menu-outline"
-              size={24}
-              color="#fbbf24"
-              onPress={() => setMenuOpen(true)}
-            />
+            <TouchableOpacity onPress={() => setMenuOpen(true)} style={{ padding: 12 }}>
+              <Ionicons name="menu" size={28} color="#ffffff" />
+            </TouchableOpacity>
           ),
           headerRight: () => null,
         })}

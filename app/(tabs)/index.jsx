@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, Linking, Platform
@@ -31,7 +31,7 @@ export default function Home() {
   const [status, setStatus] = React.useState({ attendance: null, schedule: [], tasks: [] });
   const [busy, setBusy] = React.useState(false);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(() => {
     if (!token) return;
 
     const fetchAttendance = async () => {
@@ -56,10 +56,13 @@ export default function Home() {
     };
 
     setBusy(true);
-    // Execute all in parallel, but update status separately
     Promise.allSettled([fetchAttendance(), fetchSchedule(), fetchTasks()])
       .finally(() => setBusy(false));
-  }, [token, user?.username]);
+  }, [token]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard, user?.username]);
 
   if (!loading && !token) return <Redirect href="/login" />;
 
@@ -92,6 +95,15 @@ export default function Home() {
             <Text style={s.heroGreeting}>Good {timeOfDay()}</Text>
             <Text style={s.heroName}>{user?.name || user?.username}</Text>
           </View>
+          <TouchableOpacity
+            style={[s.refreshAction, busy && s.refreshActionBusy]}
+            activeOpacity={0.75}
+            onPress={loadDashboard}
+            disabled={busy || !token}
+          >
+            {busy && <ActivityIndicator size="small" color={C.navy} style={{ marginRight: 6 }} />}
+            <Text style={s.refreshActionText}>{busy ? 'Refreshing…' : 'Refresh'}</Text>
+          </TouchableOpacity>
           {/* <TouchableOpacity style={s.logoutBtn} onPress={logout}>
             <Text style={s.logoutText}>Sign out</Text>
           </TouchableOpacity> */}
@@ -341,6 +353,19 @@ const s = StyleSheet.create({
     paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8,
   },
   logoutText: { color: '#fca5a5', fontSize: 11, fontWeight: '700' },
+  refreshAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    flexShrink: 0,
+  },
+  refreshActionBusy: { opacity: 0.8 },
+  refreshActionText: { fontSize: 11, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
 
   attBar: {
     flexDirection: 'row',

@@ -1,10 +1,10 @@
 // ============================================================
 // FILE: app/(tabs)/history.jsx  – Professional Card-Based Design
 // ============================================================
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Modal
+  StyleSheet, ActivityIndicator, Modal, FlatList
 } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../providers/AuthProvider';
@@ -38,15 +38,33 @@ function displayDate(ds) {
   return { dayName: days[dateObj.getDay()], date: `${String(d).padStart(2,'0')} ${months[m-1]}`, year: String(y) };
 }
 
-function parseSites(row) {
+function parseAllRounds(row) {
+  const rounds = [];
+  const prefixes = ['', 's2_', 's3_', 's4_', 's5_'];
+  prefixes.forEach((prefix, i) => {
+    const rNum = i + 1;
+    if (i === 0 || row[`${prefix}officeEntryTime`]) {
+      const sites = parseSites(row, prefix);
+      rounds.push({
+        rNum, prefix,
+        officeEntryTime: row[`${prefix}officeEntryTime`] || '',
+        officeExitTime: row[`${prefix}officeExitTime`] || '',
+        sites
+      });
+    }
+  });
+  return rounds;
+}
+
+function parseSites(row, prefix = '') {
   const sites = [];
   for (let i = 1; i <= 6; i++) {
-    const loc = row[`site${i}Location`];
-    const job = row[`site${i}JobNumber`];
-    const entry = row[`site${i}Entry`];
-    const exit  = row[`site${i}Exit`];
-    const proj  = row[`site${i}ProjectName`];
-    const cust  = row[`site${i}CustomerName`];
+    const loc = row[`${prefix}site${i}Location`];
+    const job = row[`${prefix}site${i}JobNumber`];
+    const entry = row[`${prefix}site${i}Entry`];
+    const exit  = row[`${prefix}site${i}Exit`];
+    const proj  = row[`${prefix}site${i}ProjectName`];
+    const cust  = row[`${prefix}site${i}CustomerName`];
     if (loc || job || entry || exit) {
       sites.push({ loc: loc||proj||'—', job: job||'—', entry: entry||'—', exit: exit||'—', customer: cust||'' });
     }
@@ -61,8 +79,9 @@ export default function History() {
   const [err, setErr] = useState('');
   const [selected, setSelected] = useState(null);
 
-  useEffect(() => {
+  const loadHistory = useCallback(() => {
     if (!token) return;
+    setErr('');
     setBusy(true);
     apiFetch('/attendance/employee-attendance-history', { token })
       .then((data) => {
@@ -75,86 +94,115 @@ export default function History() {
       .finally(() => setBusy(false));
   }, [token]);
 
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
   if (!loading && !token) return <Redirect href="/login" />;
 
-  const selectedSites = selected ? parseSites(selected) : [];
+  const selectedRounds = selected ? parseAllRounds(selected) : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {/* Header */}
       <View style={h.header}>
-        <Text style={h.title}>Attendance History</Text>
+        <View style={h.headerControls}>
+          <Text style={h.title}>Attendance History</Text>
+          <TouchableOpacity
+            style={[h.refreshButton, busy && h.refreshButtonBusy]}
+            onPress={loadHistory}
+            disabled={busy || !token}
+            activeOpacity={0.75}
+          >
+            {busy ? <ActivityIndicator size="small" color={C.navy} style={{ marginRight: 6 }} /> : null}
+            <Text style={h.refreshButtonText}>{busy ? 'Refreshing …' : 'Refresh data'}</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={h.subtitle}>Last 30 days</Text>
-        {busy && <ActivityIndicator color={C.amber} style={{ marginTop: 8 }} />}
         {err ? <Text style={h.errText}>{err}</Text> : null}
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 50 }}>
-        {rows.length === 0 && !busy ? (
-          <View style={h.emptyWrap}>
-            <Text style={{ fontSize: 48 }}>📋</Text>
-            <Text style={h.emptyTitle}>No Records Yet</Text>
-            <Text style={h.emptySubtitle}>Your attendance history will appear here once you start recording.</Text>
-          </View>
-        ) : (
-          rows.map((row, idx) => {
-            const d = displayDate(row.date);
-            const sites = parseSites(row);
-            const hasEntry = !!row.officeEntryTime;
-            const hasExit  = !!row.officeExitTime;
-            return (
-              <TouchableOpacity key={idx} activeOpacity={0.85} onPress={() => setSelected(row)}>
-                <View style={h.card}>
-                  {/* Left date column */}
-                  <View style={h.dateCol}>
-                    <Text style={h.dateDay}>{d.dayName}</Text>
-                    <Text style={h.dateNum}>{d.date.split(' ')[0]}</Text>
-                    <Text style={h.dateMon}>{d.date.split(' ')[1]}</Text>
-                    <Text style={h.dateYear}>{d.year}</Text>
+      <FlatList
+        data={rows}
+        keyExtractor={(item, index) => item.date ? item.date.toString() : index.toString()}
+        contentContainerStyle={{ padding: 16, paddingBottom: 50 }}
+        initialNumToRender={10}
+        windowSize={5}
+        removeClippedSubviews={true}
+        ListEmptyComponent={
+          !busy ? (
+            <View style={h.emptyWrap}>
+              <Text style={{ fontSize: 48 }}>📋</Text>
+              <Text style={h.emptyTitle}>No Records Yet</Text>
+              <Text style={h.emptySubtitle}>Your attendance history will appear here once you start recording.</Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item: row, index: idx }) => {
+          const d = displayDate(row.date);
+          const sites = parseSites(row);
+          const hasEntry = !!row.officeEntryTime;
+          const hasExit  = !!row.officeExitTime;
+          return (
+            <TouchableOpacity activeOpacity={0.85} onPress={() => setSelected(row)}>
+              <View style={h.card}>
+                {/* Left date column */}
+                <View style={h.dateCol}>
+                  <Text style={h.dateDay}>{d.dayName}</Text>
+                  <Text style={h.dateNum}>{d.date.split(' ')[0]}</Text>
+                  <Text style={h.dateMon}>{d.date.split(' ')[1]}</Text>
+                  <Text style={h.dateYear}>{d.year}</Text>
+                </View>
+
+                {/* Main content */}
+                <View style={h.cardBody}>
+                  {/* Office times */}
+                  <View style={h.officeRow}>
+                    <View style={[h.timeCell, { backgroundColor: hasEntry ? C.indigoBg : '#f8fafc' }]}>
+                      <Text style={h.timeCellLabel}>OFFICE OUT</Text>
+                      <Text style={[h.timeCellVal, { color: hasEntry ? C.indigo : C.slate }]}>
+                        {fmt(row.officeEntryTime)}
+                      </Text>
+                    </View>
+                    <View style={[h.timeCell, { backgroundColor: hasExit ? '#ecfdf5' : '#f8fafc' }]}>
+                      <Text style={h.timeCellLabel}>OFFICE IN</Text>
+                      <Text style={[h.timeCellVal, { color: hasExit ? C.green : C.slate }]}>
+                        {fmt(row.officeExitTime)}
+                      </Text>
+                    </View>
                   </View>
 
-                  {/* Main content */}
-                  <View style={h.cardBody}>
-                    {/* Office times */}
-                    <View style={h.officeRow}>
-                      <View style={[h.timeCell, { backgroundColor: hasEntry ? C.indigoBg : '#f8fafc' }]}>
-                        <Text style={h.timeCellLabel}>OFFICE OUT</Text>
-                        <Text style={[h.timeCellVal, { color: hasEntry ? C.indigo : C.slate }]}>
-                          {fmt(row.officeEntryTime)}
-                        </Text>
-                      </View>
-                      <View style={[h.timeCell, { backgroundColor: hasExit ? '#ecfdf5' : '#f8fafc' }]}>
-                        <Text style={h.timeCellLabel}>OFFICE IN</Text>
-                        <Text style={[h.timeCellVal, { color: hasExit ? C.green : C.slate }]}>
-                          {fmt(row.officeExitTime)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Sites summary */}
-                    {sites.length > 0 && (
-                      <View style={h.siteSummary}>
-                        <Text style={h.siteSummaryLabel}>🏗️ {sites.length} Site Visit{sites.length > 1 ? 's' : ''}</Text>
-                        {sites.map((s, si) => (
+                  {/* Sites summary */}
+                  {/* Rounds summary */}
+                  {parseAllRounds(row).map((rd, ridx) => {
+                    if (ridx === 0 && rd.sites.length === 0) return null;
+                    return (
+                      <View key={ridx} style={[h.siteSummary, ridx > 0 && { marginTop: 8, backgroundColor: rd.rNum === 2 ? '#fffbeb' : rd.rNum === 3 ? '#ecfdf5' : '#f5f3ff' }]}>
+                        {ridx > 0 ? (
+                          <Text style={[h.siteSummaryLabel, { color: rd.rNum === 2 ? '#d97706' : rd.rNum === 3 ? '#059669' : '#7c3aed' }]}>🔄 ROUND {rd.rNum} ({rd.sites.length} Sites)</Text>
+                        ) : (
+                          <Text style={h.siteSummaryLabel}>🏗️ {rd.sites.length} Site Visit{rd.sites.length > 1 ? 's' : ''}</Text>
+                        )}
+                        {rd.sites.map((s, si) => (
                           <View key={si} style={h.siteRow}>
-                            <View style={h.siteDot} />
+                            <View style={[h.siteDot, ridx > 0 && { backgroundColor: rd.rNum === 2 ? '#f59e0b' : rd.rNum === 3 ? '#10b981' : '#8b5cf6' }]} />
                             <Text style={h.siteLocText} numberOfLines={1}>{s.loc}</Text>
                             <Text style={h.siteTimeText}>{fmt(s.entry)} → {fmt(s.exit)}</Text>
                           </View>
                         ))}
                       </View>
-                    )}
+                    );
+                  })}
 
-                    <View style={h.viewMoreRow}>
-                      <Text style={h.viewMore}>Full Details →</Text>
-                    </View>
+                  <View style={h.viewMoreRow}>
+                    <Text style={h.viewMore}>Full Details →</Text>
                   </View>
                 </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </ScrollView>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+      />
 
       {/* Detail Modal */}
       <Modal visible={!!selected} animationType="slide" transparent onRequestClose={() => setSelected(null)}>
@@ -178,61 +226,71 @@ export default function History() {
             })()}
 
             <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }}>
-              {/* Office Times */}
-              <View style={h.modalSection}>
-                <Text style={h.modalSectionTitle}>OFFICE PRESENCE</Text>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={[h.modalTimeBox, { flex: 1, backgroundColor: selected?.officeEntryTime ? C.indigoBg : '#f8fafc' }]}>
-                    <Text style={h.modalTimeLabel}>DEPARTURE (OUT)</Text>
-                    <Text style={[h.modalTimeVal, { color: selected?.officeEntryTime ? C.indigo : C.slate }]}>
-                      {fmt(selected?.officeEntryTime)}
-                    </Text>
-                  </View>
-                  <View style={[h.modalTimeBox, { flex: 1, backgroundColor: selected?.officeExitTime ? '#ecfdf5' : '#f8fafc' }]}>
-                    <Text style={h.modalTimeLabel}>ARRIVAL (IN)</Text>
-                    <Text style={[h.modalTimeVal, { color: selected?.officeExitTime ? C.green : C.slate }]}>
-                      {fmt(selected?.officeExitTime)}
-                    </Text>
-                  </View>
-                </View>
-              </View>
+              {/* Dynamic Rounds Iterate */}
+              {selectedRounds.map((rd, rIndex) => (
+                <View key={rIndex}>
+                  {rIndex > 0 && (
+                     <View style={{ alignItems: 'center', marginVertical: 10 }}>
+                       <Text style={{ fontSize: 18 }}>🔄</Text>
+                       <Text style={{ fontSize: 10, fontWeight: '900', color: '#94a3b8', letterSpacing: 1.5, marginTop: 4 }}>CONTINUATION: ROUND {rd.rNum}</Text>
+                     </View>
+                  )}
 
-              {/* Site nodes */}
-              {selectedSites.length > 0 && (
-                <View style={h.modalSection}>
-                  <Text style={h.modalSectionTitle}>SITE DEPLOYMENTS ({selectedSites.length})</Text>
-                  {selectedSites.map((s, si) => (
-                    <View key={si} style={h.modalSiteCard}>
-                      <View style={h.modalSiteHeader}>
-                        <View style={h.modalSiteNum}><Text style={h.modalSiteNumText}>{si+1}</Text></View>
-                        <Text style={h.modalSiteLoc} numberOfLines={2}>{s.loc}</Text>
+                  <View style={h.modalSection}>
+                    <Text style={h.modalSectionTitle}>{rIndex === 0 ? 'OFFICE PRESENCE' : `ROUND ${rd.rNum} BASE OPS`}</Text>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <View style={[h.modalTimeBox, { flex: 1, backgroundColor: rd.officeEntryTime ? (rIndex > 0 ? '#fef3c7' : C.indigoBg) : '#f8fafc' }]}>
+                        <Text style={h.modalTimeLabel}>DEPARTURE (OUT)</Text>
+                        <Text style={[h.modalTimeVal, { color: rd.officeEntryTime ? (rIndex > 0 ? '#b45309' : C.indigo) : C.slate }]}>
+                          {fmt(rd.officeEntryTime)}
+                        </Text>
                       </View>
-                      {s.job !== '—' && (
-                        <Text style={h.modalSiteJob}>Job #{s.job}</Text>
-                      )}
-                      {s.customer ? <Text style={h.modalSiteCust}>🏢 {s.customer}</Text> : null}
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                        <View style={[h.modalSiteTime, { backgroundColor: C.indigoBg }]}>
-                          <Text style={h.modalSiteTimeLabel}>ARRIVAL</Text>
-                          <Text style={[h.modalSiteTimeVal, { color: C.indigo }]}>{fmt(s.entry)}</Text>
-                        </View>
-                        <View style={[h.modalSiteTime, { backgroundColor: '#fef3c7' }]}>
-                          <Text style={h.modalSiteTimeLabel}>DEPARTURE</Text>
-                          <Text style={[h.modalSiteTimeVal, { color: '#b45309' }]}>{fmt(s.exit)}</Text>
-                        </View>
+                      <View style={[h.modalTimeBox, { flex: 1, backgroundColor: rd.officeExitTime ? '#ecfdf5' : '#f8fafc' }]}>
+                        <Text style={h.modalTimeLabel}>ARRIVAL (IN)</Text>
+                        <Text style={[h.modalTimeVal, { color: rd.officeExitTime ? C.green : C.slate }]}>
+                          {fmt(rd.officeExitTime)}
+                        </Text>
                       </View>
                     </View>
-                  ))}
-                </View>
-              )}
+                  </View>
 
-              {selectedSites.length === 0 && (
-                <View style={[h.modalSection, { alignItems: 'center', paddingVertical: 30 }]}>
-                  <Text style={{ fontSize: 32 }}>🏠</Text>
-                  <Text style={[h.modalSectionTitle, { marginTop: 10, textAlign: 'center' }]}>OFFICE ONLY DAY</Text>
-                  <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', marginTop: 4 }}>No site visits recorded</Text>
+                  {rd.sites.length > 0 && (
+                    <View style={h.modalSection}>
+                      <Text style={h.modalSectionTitle}>{rIndex === 0 ? `SITE DEPLOYMENTS (${rd.sites.length})` : `ROUND ${rd.rNum} SITES (${rd.sites.length})`}</Text>
+                      {rd.sites.map((s, si) => (
+                        <View key={si} style={[h.modalSiteCard, rIndex > 0 && { borderLeftColor: '#f59e0b' }]}>
+                          <View style={h.modalSiteHeader}>
+                            <View style={[h.modalSiteNum, rIndex > 0 && { backgroundColor: '#f59e0b' }]}><Text style={h.modalSiteNumText}>{si+1}</Text></View>
+                            <Text style={h.modalSiteLoc} numberOfLines={2}>{s.loc}</Text>
+                          </View>
+                          {s.job !== '—' && (
+                            <Text style={h.modalSiteJob}>Job #{s.job}</Text>
+                          )}
+                          {s.customer ? <Text style={h.modalSiteCust}>🏢 {s.customer}</Text> : null}
+                          <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                            <View style={[h.modalSiteTime, { backgroundColor: rIndex > 0 ? '#fffbeb' : C.indigoBg }]}>
+                              <Text style={h.modalSiteTimeLabel}>ARRIVAL</Text>
+                              <Text style={[h.modalSiteTimeVal, { color: rIndex > 0 ? '#b45309' : C.indigo }]}>{fmt(s.entry)}</Text>
+                            </View>
+                            <View style={[h.modalSiteTime, { backgroundColor: '#fef3c7' }]}>
+                              <Text style={h.modalSiteTimeLabel}>DEPARTURE</Text>
+                              <Text style={[h.modalSiteTimeVal, { color: '#b45309' }]}>{fmt(s.exit)}</Text>
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {rIndex === 0 && rd.sites.length === 0 && (
+                    <View style={[h.modalSection, { alignItems: 'center', paddingVertical: 30 }]}>
+                      <Text style={{ fontSize: 32 }}>🏠</Text>
+                      <Text style={[h.modalSectionTitle, { marginTop: 10, textAlign: 'center' }]}>OFFICE ONLY DAY</Text>
+                      <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', marginTop: 4 }}>No site visits recorded</Text>
+                    </View>
+                  )}
                 </View>
-              )}
+              ))}
             </ScrollView>
 
             <TouchableOpacity onPress={() => setSelected(null)} style={h.modalCloseBtn}>
@@ -247,9 +305,13 @@ export default function History() {
 
 const h = StyleSheet.create({
   header: { backgroundColor: C.navy, padding: 24, paddingTop: 28, paddingBottom: 20 },
-  title: { fontSize: 26, fontWeight: '900', color: '#fff' },
+  headerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  title: { fontSize: 26, fontWeight: '900', color: '#fff', flex: 1 },
   subtitle: { fontSize: 12, fontWeight: '700', color: '#64748b', marginTop: 2 },
   errText: { color: '#fca5a5', fontWeight: '700', marginTop: 6, fontSize: 13 },
+  refreshButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'rgba(255,255,255,0.12)' },
+  refreshButtonBusy: { opacity: 0.75 },
+  refreshButtonText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.5, color: '#fff' },
 
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '900', color: C.navy },
