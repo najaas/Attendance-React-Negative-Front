@@ -5,6 +5,3 @@ node_modules/
 # Env & build outputs
 .env
 dist/
-
-# Firebase secrets
-google-services.json
