@@ -49,16 +49,18 @@ function nowRounded() {
 }
 function todayStr() {
   const d = zonedNow();
+  if (d.getHours() < 4) d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 function prettyToday() {
   const d = zonedNow();
+  if (d.getHours() < 4) d.setDate(d.getDate() - 1);
   const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
 }
 function formatDisplay(val24) {
-  if (!val24 || val24 === '00:00' || val24 === '—') return '—';
+  if (!val24 || val24 === '—') return '—';
   try {
     const [h24, m] = val24.split(':').map(Number);
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
@@ -258,6 +260,8 @@ export default function Attendance() {
 
   // Custom Status Modal State
   const [statusModal, setStatusModal] = React.useState({ open: false, title: '', message: '', type: 'success' });
+  const [errorMsg, setErrorMsg] = React.useState('');
+  const showError = (msg) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
 
   const [myJobs, setMyJobs] = React.useState([]);
 
@@ -325,7 +329,15 @@ export default function Attendance() {
           _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Location error:", e);
+    }
+    
+    if (!_loc || !_loc.lat) {
+      showError('GPS Location required to mark attendance.');
+      setBusy(false);
+      return;
+    }
     const _ts = new Date().toLocaleString('en-US', { timeZone: APP_TIMEZONE });
     const meta = { [actionKey]: { ts: _ts, lat: _loc?.lat, lng: _loc?.lng } };
     const activeForm = { ...extraForms[prefix], ...dataOverrides };
@@ -395,7 +407,15 @@ export default function Attendance() {
           _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Location error:", e);
+    }
+    
+    if (!_loc || !_loc.lat) {
+      showError('GPS Location required to mark attendance.');
+      setBusy(false);
+      return;
+    }
     
     const _ts = new Date().toLocaleString('en-US', { timeZone: APP_TIMEZONE });
     const meta = { [actionKey]: { ts: _ts, lat: _loc?.lat, lng: _loc?.lng } };
@@ -430,7 +450,14 @@ export default function Attendance() {
           <Text style={s.floatingLabel}>SYNCED PORTAL TIME</Text>
         </View>
       </View>
-      <View style={s.content}>
+      
+      {!!errorMsg && (
+        <View style={{ backgroundColor: '#fef2f2', padding: 12, marginHorizontal: 25, marginTop: 45, borderRadius: 12, borderWidth: 1.5, borderColor: '#f87171' }}>
+           <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '900', textAlign: 'center' }}>⚠️ {errorMsg}</Text>
+        </View>
+      )}
+
+      <View style={[s.content, !!errorMsg ? { paddingTop: 20 } : { paddingTop: 60 }]}>
         {/* Office Out Card */}
         <View style={[s.premiumCard, { borderTopColor: C.indigo, borderTopWidth: 4 }]}>
           <View style={s.cardHeader}>
