@@ -5,43 +5,19 @@ import { clearToken, decodeJwt, loadToken, saveToken } from '../../lib/auth';
 import { getExpoPushTokenSafe } from '../../lib/notifications';
 
 const AuthContext = createContext(null);
+
+function isTokenExpired(payload) {
+  if (!payload || !payload.exp) return true;
+  return Date.now() >= payload.exp * 1000;
+}
+
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-
-    loadToken()
-      .then((savedToken) => {
-        if (!mounted) return;
-        if (savedToken) {
-          setToken(savedToken);
-          setUser(decodeJwt(savedToken));
-        }
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const login = async (username, password) => {
-    const data = await apiFetch('/login', { method: 'POST', body: { username, password } });
-    if (data?.token) {
-      await saveToken(data.token);
-      setToken(data.token);
-      setUser(decodeJwt(data.token));
-      registerDevicePushToken(data.token).catch(() => {});
-    }
-    return data;
-  };
-
-  const logout = async () => {
+  const logout = async (expired = false) => {
     if (token) {
       const expoPushToken = await getExpoPushTokenSafe();
       if (expoPushToken) {
@@ -55,6 +31,53 @@ export function AuthProvider({ children }) {
     await clearToken();
     setToken(null);
     setUser(null);
+    if (expired) setSessionExpired(true);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    let timer;
+
+    loadToken()
+      .then((savedToken) => {
+        if (!mounted) return;
+        if (savedToken) {
+          const payload = decodeJwt(savedToken);
+          if (!payload || isTokenExpired(payload)) {
+            clearToken();
+            return;
+          }
+          setToken(savedToken);
+          setUser(payload);
+
+          const msUntilExpiry = payload.exp * 1000 - Date.now();
+          timer = setTimeout(() => logout(true), msUntilExpiry);
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  const login = async (username, password) => {
+    setSessionExpired(false);
+    const data = await apiFetch('/login', { method: 'POST', body: { username, password } });
+    if (data?.token) {
+      const payload = decodeJwt(data.token);
+      await saveToken(data.token);
+      setToken(data.token);
+      setUser(payload);
+      registerDevicePushToken(data.token).catch(() => {});
+
+      const msUntilExpiry = payload.exp * 1000 - Date.now();
+      setTimeout(() => logout(true), msUntilExpiry);
+    }
+    return data;
   };
 
   useEffect(() => {
@@ -83,7 +106,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, logout }}>
+    <AuthContext.Provider value={{ token, user, loading, sessionExpired, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from './providers/AuthProvider';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({ username: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -56,6 +56,12 @@ export default function Login() {
                 <Text style={s.showBtnText}>{showPass ? 'Hide' : 'Show'}</Text>
               </TouchableOpacity>
             </View>
+
+            {sessionExpired && !err ? (
+              <View style={[s.errorBox, { backgroundColor: '#eff6ff', borderLeftColor: '#3b82f6' }]}>
+                <Text style={[s.errorText, { color: '#1e40af' }]}>Your session has expired. Please log in again.</Text>
+              </View>
+            ) : null}
 
             {err ? <View style={s.errorBox}><Text style={s.errorText}>{err}</Text></View> : null}
 
