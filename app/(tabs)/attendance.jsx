@@ -80,6 +80,7 @@ function jobOptionLabel(job) {
   return truncateText(title, 58);
 }
 
+
 function parseRecord(record) {
   if (!record) return { ...EMPTY_RECORD, sites: [{ ...EMPTY_SITE }] };
   const sites = [];
@@ -551,7 +552,7 @@ export default function Attendance() {
                             <TouchableOpacity style={s.microPicker} onPress={() => openPicker('siteEntry', site.entry, i)}>
                                <Text style={[s.microPickerText, !site.entry && { color: '#cbd5e1' }]}>{site.entry || '00:00'}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={()=>updateSite(i, 'entry', nowRounded())} style={s.microNow}><Text style={s.microNowText}>NOW ⌚</Text></TouchableOpacity>
+                            <TouchableOpacity onPress={()=>updateSite(i, 'entry', nowRounded())} style={s.microNow}><Text style={s.microNowText}>NOW BUTTON ⌚</Text></TouchableOpacity>
                           </View>
                           <TouchableOpacity style={[s.actionBtn, { backgroundColor: C.indigo }]} onPress={() => {
                             const ns = [...form.sites]; ns[i].entry = site.entry || nowRounded();
@@ -569,7 +570,7 @@ export default function Attendance() {
                             <TouchableOpacity disabled={!site.entry} style={[s.microPicker, { opacity: site.entry ? 1 : 0.5 }]} onPress={() => openPicker('siteExit', site.exit, i)}>
                                <Text style={[s.microPickerText, !site.exit && { color: '#cbd5e1' }]}>{site.exit || '00:00'}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity disabled={!site.entry} onPress={()=>updateSite(i, 'exit', nowRounded())} style={[s.microNow, { opacity:site.entry?1:0.5 }]}><Text style={s.microNowText}>NOW ⌚</Text></TouchableOpacity>
+                            <TouchableOpacity disabled={!site.entry} onPress={()=>updateSite(i, 'exit', nowRounded())} style={[s.microNow, { opacity:site.entry?1:0.5 }]}><Text style={s.microNowText}>NOW BUTTON ⌚</Text></TouchableOpacity>
                           </View>
                           <TouchableOpacity style={[s.actionBtn, { backgroundColor: C.amber, opacity:site.entry?1:0.5 }]} disabled={!site.entry} onPress={() => {
                             const ns = [...form.sites]; ns[i].exit = site.exit || nowRounded();
@@ -697,6 +698,32 @@ export default function Attendance() {
                           </TouchableOpacity>
                         )}
                       </View>
+                      {myJobs.length > 0 && !extS?.entrySubmitTs && (
+                        <View style={{ backgroundColor: cBg, borderRadius: 12, padding: 0, marginBottom: 5 }}>
+                          <Picker
+                            selectedValue={`${site.projectName || site.location || ''}||${site.jobNumber || ''}`}
+                            onValueChange={(val) => {
+                              if (val === '||') return;
+                              const [pn, jn] = val.split('||');
+                              updateExtraSite(prefix, i, 'projectName', pn || '');
+                              updateExtraSite(prefix, i, 'location', pn || '');
+                              updateExtraSite(prefix, i, 'jobNumber', jn || '');
+                            }}
+                            style={{ color: cBtn }}
+                            dropdownIconColor={cBtn}
+                          >
+                            <Picker.Item label="-- Select Scheduled Assignment --" value="||" color={cBtn} />
+                            {myJobs.map((job, jIdx) => (
+                              <Picker.Item
+                                key={jIdx}
+                                label={jobOptionLabel(job)}
+                                value={`${job.projectName || ''}||${job.jobNumber || ''}`}
+                                color={cBtn}
+                              />
+                            ))}
+                          </Picker>
+                        </View>
+                      )}
                       <View style={{ gap: 8, marginBottom: 15 }}>
                         <TextInput style={s.nodeInp} placeholder="Project Name..." value={site.projectName} onChangeText={v => { updateExtraSite(prefix, i, 'projectName', v); updateExtraSite(prefix, i, 'location', v); }} editable={!extS?.entrySubmitTs} placeholderTextColor={C.slate} />
                         <TextInput style={s.nodeInp} placeholder="Job Number..." value={site.jobNumber} onChangeText={v => updateExtraSite(prefix, i, 'jobNumber', v)} editable={!extS?.entrySubmitTs} placeholderTextColor={C.slate} />

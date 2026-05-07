@@ -11,7 +11,8 @@ const iconMap = {
   attendance: 'time',
   schedule: 'calendar',
   tasks: 'checkmark-done',
-  history: 'document-text'
+  history: 'document-text',
+  fsr: 'clipboard'
 };
 
 export default function TabsLayout() {
@@ -45,6 +46,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="schedule" options={{ title: 'Schedule' }} />
         <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
         <Tabs.Screen name="history" options={{ title: 'History' }} />
+        <Tabs.Screen name="fsr" options={{ title: 'FSR' }} />
       </Tabs>
 
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} onLogout={logout} />

@@ -26,10 +26,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "09b1b924-a774-4031-98fb-1a946a4df585"
+        "projectId": "7b9ecd91-5b66-4087-95c3-5420bdc72b46"
       }
     },
-    "owner": "najas",
     "jsEngine": "hermes",
     "plugins": [
       "expo-secure-store",

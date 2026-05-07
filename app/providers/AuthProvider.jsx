@@ -2,12 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { apiFetch } from '../../lib/api';
 import { clearToken, decodeJwt, loadToken, saveToken } from '../../lib/auth';
-import { getExpoPushTokenSafe } from '../../lib/notifications';
+import { getExpoPushTokenSafe, setupNotificationHandler } from '../../lib/notifications';
 
 const AuthContext = createContext(null);
 
 function isTokenExpired(payload) {
-  if (!payload || !payload.exp) return true;
+  if (!payload) return true;
+  if (!payload.exp) return false;
   return Date.now() >= payload.exp * 1000;
 }
 
@@ -35,6 +36,9 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
+    // Setup notification handler safely (no-op in Expo Go)
+    setupNotificationHandler();
+
     let mounted = true;
     let timer;
 
@@ -50,8 +54,10 @@ export function AuthProvider({ children }) {
           setToken(savedToken);
           setUser(payload);
 
-          const msUntilExpiry = payload.exp * 1000 - Date.now();
-          timer = setTimeout(() => logout(true), msUntilExpiry);
+          if (payload.exp) {
+            const msUntilExpiry = payload.exp * 1000 - Date.now();
+            timer = setTimeout(() => logout(true), msUntilExpiry);
+          }
         }
       })
       .finally(() => {
@@ -74,8 +80,10 @@ export function AuthProvider({ children }) {
       setUser(payload);
       registerDevicePushToken(data.token).catch(() => {});
 
-      const msUntilExpiry = payload.exp * 1000 - Date.now();
-      setTimeout(() => logout(true), msUntilExpiry);
+      if (payload.exp) {
+        const msUntilExpiry = payload.exp * 1000 - Date.now();
+        setTimeout(() => logout(true), msUntilExpiry);
+      }
     }
     return data;
   };

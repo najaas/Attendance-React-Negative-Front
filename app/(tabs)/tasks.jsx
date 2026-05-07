@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Linking } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Linking, Image } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../providers/AuthProvider';
 import { apiFetch } from '../../lib/api';
@@ -19,6 +19,17 @@ export default function Tasks() {
   const [notes, setNotes] = useState({});
   const [submittingId, setSubmittingId] = useState(null);
   const [filter, setFilter] = useState('all');
+
+  const sendWhatsApp = async (task) => {
+    try {
+      const updated = await apiFetch(`/tasks/${task.id}/update`, { method: 'PUT', token, body: { panelPhotosSent: true } });
+      setTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+    } catch(e) {}
+    
+    const phone = '971565204410';
+    const text = `Panel Photos for Task:\nJob No: ${task.jobNumber || '-'}\nProject: ${task.projectName || '-'}\nCustomer: ${task.customerName || '-'}\n(Photos being sent directly via WhatsApp)`;
+    Linking.openURL(`whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`);
+  };
 
   useEffect(() => { if (token) load(); }, [token]);
 
@@ -42,8 +53,17 @@ export default function Tasks() {
     finally { setSubmittingId(null); }
   };
 
-  const counts = tasks.reduce((a, t) => { a.total++; t.status === 'completed' ? a.done++ : a.pending++; return a; }, { total: 0, pending: 0, done: 0 });
-  const filtered = filter === 'all' ? tasks : filter === 'pending' ? tasks.filter(t => t.status !== 'completed') : tasks.filter(t => t.status === 'completed');
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const in30Days = (t) => {
+    const d = new Date(t.taskDate || t.completedAt || t.createdAt || Date.now());
+    return d >= thirtyDaysAgo;
+  };
+
+  const processedTasks = tasks.filter(t => t.status !== 'completed' || in30Days(t));
+
+  const counts = processedTasks.reduce((a, t) => { a.total++; t.status === 'completed' ? a.done++ : a.pending++; return a; }, { total: 0, pending: 0, done: 0 });
+  const filtered = filter === 'all' ? processedTasks : filter === 'pending' ? processedTasks.filter(t => t.status !== 'completed') : processedTasks.filter(t => t.status === 'completed');
 
   return (
     <View style={s.root}>
@@ -97,17 +117,33 @@ export default function Tasks() {
               </View>
               {task.description ? <Text style={s.taskDesc}>{task.description}</Text> : null}
               <View style={s.metaGrid}>
-                {[['Job No.', task.jobNumber || task.jobNo || '-'], ['Project', task.projectName || task.project || '-'], ['Customer', task.customerName || task.customer || '-'], ['Date', task.taskDate || '-'], ['Site', task.site || 'All Sites'], ['Assigned by', task.assignedByUsername || '-']].map(([label, value]) => (
+                {[['Job No.', task.jobNumber || task.jobNo || '-'], ['Project', task.projectName || task.project || '-'], ['Customer', task.customerName || task.customer || '-'], ['Date', task.taskDate || '-'], ['Assigned by', task.assignedByUsername || '-']].map(([label, value]) => (
                   <View key={label} style={s.metaItem}>
                     <Text style={s.metaLabel}>{label}</Text>
                     <Text style={s.metaValue} numberOfLines={1}>{value}</Text>
                   </View>
                 ))}
               </View>
-              {gpsUrl ? (
-                <TouchableOpacity style={s.mapBtn} onPress={() => Linking.openURL(gpsUrl)}>
-                  <Text style={s.mapBtnText}>📍 Open Location Map</Text>
-                </TouchableOpacity>
+
+
+
+              {/* Panel Photos Section */}
+              <View style={{ backgroundColor: task.panelPhotosSent ? '#f0fdf4' : C.inputBg, borderStyle: task.panelPhotosSent ? 'solid' : 'dashed', borderWidth: 1, borderColor: task.panelPhotosSent ? '#bcf0da' : '#cbd5e1', borderRadius: 12, padding: 14, marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: task.panelPhotosSent ? '#166534' : C.muted, marginBottom: 2 }}>PANEL PHOTOS</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: task.panelPhotosSent ? '#166534' : C.navy }}>{task.panelPhotosSent ? '✅ PHOTOS SENT' : 'NOT SENT YET'}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => sendWhatsApp(task)} style={{ backgroundColor: '#25d366', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>WHATSAPP</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {task.adminNote ? (
+                <View style={{ backgroundColor: '#eff6ff', borderRadius: 8, padding: 12, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: '#2563eb' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#1e40af', marginBottom: 4 }}>ADMIN INSTRUCTIONS</Text>
+                  <Text style={{ fontSize: 12, color: '#1e40af', fontWeight: '700' }}>{task.adminNote}</Text>
+                </View>
               ) : null}
               {done ? (
                 <View style={s.completionNote}>

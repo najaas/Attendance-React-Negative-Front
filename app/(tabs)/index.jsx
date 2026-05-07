@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Linking, Platform
+  StyleSheet, ActivityIndicator, Linking, Platform, RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../providers/AuthProvider';
@@ -30,8 +30,9 @@ export default function Home() {
   const { token, user, loading, logout } = useAuth();
   const [status, setStatus] = React.useState({ attendance: null, schedule: [], tasks: [] });
   const [busy, setBusy] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
 
-  const loadDashboard = useCallback(() => {
+  const loadDashboard = useCallback(async () => {
     if (!token) return;
 
     const fetchAttendance = async () => {
@@ -56,9 +57,15 @@ export default function Home() {
     };
 
     setBusy(true);
-    Promise.allSettled([fetchAttendance(), fetchSchedule(), fetchTasks()])
-      .finally(() => setBusy(false));
+    await Promise.allSettled([fetchAttendance(), fetchSchedule(), fetchTasks()]);
+    setBusy(false);
   }, [token]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadDashboard();
+    setRefreshing(false);
+  }, [loadDashboard]);
 
   useEffect(() => {
     loadDashboard();
@@ -83,7 +90,13 @@ export default function Home() {
   const upcomingCount = mySchedule.filter(r => r.taskDate > today).length;
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={s.container}>
+    <ScrollView 
+      style={s.root} 
+      contentContainerStyle={s.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3b82f6']} />
+      }
+    >
 
       {/* Hero greeting */}
       <View style={s.hero}>
@@ -244,14 +257,7 @@ export default function Home() {
                 );
               })() : null}
             </View>
-            {r.location ? (
-              <TouchableOpacity
-                style={s.mapBtn}
-                onPress={() => Linking.openURL(normalizeUrl(r.location))}
-              >
-                <Text style={s.mapBtnText}>Map</Text>
-              </TouchableOpacity>
-            ) : null}
+
           </View>
         ))
       )}

@@ -9,6 +9,7 @@ export const NAV_ITEMS = [
   { name: 'Schedule', icon: 'calendar', href: '/(tabs)/schedule' },
   { name: 'Tasks', icon: 'checkmark-done', href: '/(tabs)/tasks' },
   { name: 'History', icon: 'document-text', href: '/(tabs)/history' },
+  { name: 'FSR', icon: 'clipboard', href: '/(tabs)/fsr' },
 ];
 
 export default function TopNav() {

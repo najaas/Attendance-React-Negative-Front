@@ -25,6 +25,17 @@ function normalizeUrl(v) {
   const raw = String(v || '').trim();
   return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
+function getGpsLocation(v) {
+  return String(
+    v?.location ||
+    v?.taskLocation ||
+    v?.siteLocation ||
+    v?.siteLocationName ||
+    v?.gpsLocation ||
+    v?.gpsLink ||
+    ''
+  ).trim();
+}
 function dateOnly(date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
@@ -85,9 +96,11 @@ export default function Schedule() {
     const groupJobs = (list) => {
       const map = new Map();
       (list || []).forEach(r => {
-        const k = [r.projectName,r.customerName,r.customerPerson,r.customerContact,r.jobNumber,r.description,r.site,r.officeTime,r.siteTime,r.location,r.vehicle].join('||');
+        const gpsLocation = getGpsLocation(r);
+        const k = [r.projectName,r.customerName,r.customerPerson,r.customerContact,r.jobNumber,r.description,r.site,r.officeTime,r.siteTime,gpsLocation,r.vehicle].join('||');
         if (!map.has(k)) map.set(k, { ...r, technicians: [] });
         const e = map.get(k);
+        if (!e.location && gpsLocation) e.location = gpsLocation;
         const t = r.assignedToShortName || r.assignedToName || r.assignedToUsername || '';
         if (t && !e.technicians.includes(t)) e.technicians.push(t);
       });
@@ -197,9 +210,20 @@ export default function Schedule() {
                       </View>
                     )}
 
+                    {/* Status & Note Date */}
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                      <View style={{ flex: 1, backgroundColor: job.status === 'completed' ? '#f0fdf4' : '#fef2f2', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: job.status === 'completed' ? '#bcf0da' : '#fecaca' }}>
+                        <Text style={{ fontSize: 8, fontWeight: '900', color: job.status === 'completed' ? '#166534' : '#991b1b', marginBottom: 2 }}>FSR STATUS</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '900', color: job.status === 'completed' ? '#166534' : '#991b1b' }}>{job.status === 'completed' ? '✅ COMPLETED' : '🔴 PENDING'}</Text>
+                      </View>
+                      <View style={{ flex: 1, backgroundColor: '#f8fafc', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                        <Text style={{ fontSize: 8, fontWeight: '900', color: '#64748b', marginBottom: 2 }}>NOTE DATE</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '900', color: C.navy }}>{displayDate(job.statusDate || job.taskDate)}</Text>
+                      </View>
+                    </View>
+
                     {/* Footer tags */}
                     <View style={sc.cardFooter}>
-                      {job.site && job.site!=='All Sites' && <View style={sc.tag}><Text style={sc.tagText}>📍 {job.site}</Text></View>}
                       {job.officeTime ? <View style={[sc.tag,{backgroundColor:'#f0fdf4'}]}><Text style={[sc.tagText,{color:'#15803d'}]}>🏢 {job.officeTime}</Text></View> : null}
                       {job.siteTime ? <View style={[sc.tag,{backgroundColor:'#fef3c7'}]}><Text style={[sc.tagText,{color:'#b45309'}]}>🏗️ {job.siteTime}</Text></View> : null}
                       {job.vehicle ? <View style={[sc.tag,{backgroundColor:'#fdf4ff'}]}><Text style={[sc.tagText,{color:'#7e22ce'}]}>🚗 {job.vehicle}</Text></View> : null}
@@ -280,7 +304,6 @@ export default function Schedule() {
                 <Text style={sc.modalSectionTitle}>LOGISTICS</Text>
                 <View style={{ flexDirection:'row', flexWrap:'wrap', gap:12 }}>
                   {[
-                    {label:'SITE',    val: selectedJob?.site||'All Sites', icon:'📍'},
                     {label:'VEHICLE', val: selectedJob?.vehicle||'—',      icon:'🚗'},
                     {label:'OFFICE',  val: selectedJob?.officeTime||'--:--', icon:'🏢'},
                     {label:'SITE TIME',val:selectedJob?.siteTime||'--:--', icon:'🏗️'},
@@ -291,11 +314,12 @@ export default function Schedule() {
                     </View>
                   ))}
                 </View>
-                {selectedJob?.location ? (
-                  <TouchableOpacity onPress={()=>Linking.openURL(normalizeUrl(selectedJob.location))} style={sc.mapModalBtn}>
-                    <Text style={sc.mapModalBtnText}>🗺️  Open Navigation Map</Text>
+                {getGpsLocation(selectedJob) ? (
+                  <TouchableOpacity onPress={()=>Linking.openURL(normalizeUrl(getGpsLocation(selectedJob)))} style={sc.mapModalBtn}>
+                    <Text style={sc.mapModalBtnText}>🗺️ Open Navigation Map</Text>
                   </TouchableOpacity>
                 ) : null}
+
               </View>
 
               {/* Team */}
@@ -316,7 +340,10 @@ export default function Schedule() {
               {/* Remarks */}
               {selectedJob?.remarks ? (
                 <View style={[sc.modalSection,{backgroundColor:'#fffbeb',borderColor:'#fde68a',borderWidth:1}]}>
-                  <Text style={[sc.modalSectionTitle,{color:'#b45309'}]}>REMARKS</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={[sc.modalSectionTitle,{color:'#b45309', marginBottom:0}]}>REMARKS</Text>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#b45309' }}>DATE: {displayDate(selectedJob.statusDate || selectedJob.taskDate)}</Text>
+                  </View>
                   <Text style={[sc.modalBodyText,{color:'#78350f'}]}>{selectedJob.remarks}</Text>
                 </View>
               ) : null}
