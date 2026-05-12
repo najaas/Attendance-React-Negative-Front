@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { apiFetch } from '../../lib/api';
 import { clearToken, decodeJwt, loadToken, saveToken } from '../../lib/auth';
@@ -8,7 +8,8 @@ const AuthContext = createContext(null);
 
 function isTokenExpired(payload) {
   if (!payload || !payload.exp) return true;
-  return Date.now() >= payload.exp * 1000;
+  const expMs = payload.exp > 1e12 ? payload.exp : payload.exp * 1000;
+  return Date.now() >= expMs;
 }
 
 export function AuthProvider({ children }) {
@@ -16,8 +17,26 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const expiryTimerRef = useRef(null);
+
+  const clearExpiryTimer = () => {
+    if (expiryTimerRef.current) {
+      clearTimeout(expiryTimerRef.current);
+      expiryTimerRef.current = null;
+    }
+  };
+
+  const armExpiryTimer = (payload) => {
+    clearExpiryTimer();
+    if (!payload || !payload.exp) return;
+    const expMs = payload.exp > 1e12 ? payload.exp : payload.exp * 1000;
+    const msUntilExpiry = expMs - Date.now();
+    if (msUntilExpiry <= 0) return;
+    expiryTimerRef.current = setTimeout(() => logout(true), msUntilExpiry);
+  };
 
   const logout = async (expired = false) => {
+    clearExpiryTimer();
     if (token) {
       const expoPushToken = await getExpoPushTokenSafe();
       if (expoPushToken) {
@@ -36,7 +55,6 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let mounted = true;
-    let timer;
 
     loadToken()
       .then((savedToken) => {
@@ -49,9 +67,7 @@ export function AuthProvider({ children }) {
           }
           setToken(savedToken);
           setUser(payload);
-
-          const msUntilExpiry = payload.exp * 1000 - Date.now();
-          timer = setTimeout(() => logout(true), msUntilExpiry);
+          armExpiryTimer(payload);
         }
       })
       .finally(() => {
@@ -60,7 +76,7 @@ export function AuthProvider({ children }) {
 
     return () => {
       mounted = false;
-      if (timer) clearTimeout(timer);
+      clearExpiryTimer();
     };
   }, []);
 
@@ -72,10 +88,12 @@ export function AuthProvider({ children }) {
       await saveToken(data.token);
       setToken(data.token);
       setUser(payload);
-      registerDevicePushToken(data.token).catch(() => {});
+      // NON-BLOCKING: Move registration to background so UI transition is instant
+      setTimeout(() => {
+        registerDevicePushToken(data.token).catch(() => {});
+      }, 0);
 
-      const msUntilExpiry = payload.exp * 1000 - Date.now();
-      setTimeout(() => logout(true), msUntilExpiry);
+      armExpiryTimer(payload);
     }
     return data;
   };

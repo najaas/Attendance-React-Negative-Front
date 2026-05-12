@@ -321,11 +321,13 @@ export default function Attendance() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        try {
-          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 8000 });
-          _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
-        } catch (e) {
-          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest, timeout: 4000 });
+        // FAST FETCH: Try last known location first (nearly instant)
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          _loc = { lat: last.coords.latitude, lng: last.coords.longitude };
+        } else {
+          // QUICK SYNC: Try balanced accuracy with short timeout
+          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 3000 });
           _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
         }
       }
@@ -399,11 +401,13 @@ export default function Attendance() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        try {
-          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 8000 });
-          _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
-        } catch (gpsError) {
-          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest, timeout: 4000 });
+        // FAST FETCH: Try last known location first (nearly instant)
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          _loc = { lat: last.coords.latitude, lng: last.coords.longitude };
+        } else {
+          // QUICK SYNC: Try balanced accuracy with short timeout
+          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 3000 });
           _loc = { lat: p.coords.latitude, lng: p.coords.longitude };
         }
       }

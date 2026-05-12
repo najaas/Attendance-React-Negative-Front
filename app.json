@@ -24,11 +24,6 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "extra": {
-      "eas": {
-        "projectId": "09b1b924-a774-4031-98fb-1a946a4df585"
-      }
-    },
     "owner": "najas",
     "jsEngine": "hermes",
     "plugins": [
@@ -44,6 +39,11 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "09b1b924-a774-4031-98fb-1a946a4df585"
+      }
+    }
   }
 }
