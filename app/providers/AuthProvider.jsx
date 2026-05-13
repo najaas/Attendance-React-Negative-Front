@@ -7,7 +7,7 @@ import { getExpoPushTokenSafe } from '../../lib/notifications';
 const AuthContext = createContext(null);
 
 function isTokenExpired(payload) {
-  if (!payload || !payload.exp) return true;
+  if (!payload || !payload.exp) return false; // Never expire if no 'exp' claim
   const expMs = payload.exp > 1e12 ? payload.exp : payload.exp * 1000;
   return Date.now() >= expMs;
 }
@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
   const expiryTimerRef = useRef(null);
+  const pushRegisteredRef = useRef(false);
 
   const clearExpiryTimer = () => {
     if (expiryTimerRef.current) {
@@ -37,16 +38,7 @@ export function AuthProvider({ children }) {
 
   const logout = async (expired = false) => {
     clearExpiryTimer();
-    if (token) {
-      const expoPushToken = await getExpoPushTokenSafe();
-      if (expoPushToken) {
-        apiFetch('/mobile/push-token', {
-          method: 'DELETE',
-          token,
-          body: { expoPushToken }
-        }).catch(() => {});
-      }
-    }
+    pushRegisteredRef.current = false;
     await clearToken();
     setToken(null);
     setUser(null);
@@ -90,7 +82,7 @@ export function AuthProvider({ children }) {
       setUser(payload);
       // NON-BLOCKING: Move registration to background so UI transition is instant
       setTimeout(() => {
-        registerDevicePushToken(data.token).catch(() => {});
+        registerDevicePushTokenWithRetry(data.token).catch(() => {});
       }, 0);
 
       armExpiryTimer(payload);
@@ -104,7 +96,7 @@ export function AuthProvider({ children }) {
 
     (async () => {
       if (!active) return;
-      registerDevicePushToken(token).catch(() => {});
+      registerDevicePushTokenWithRetry(token).catch(() => {});
     })();
 
     return () => {
@@ -113,14 +105,33 @@ export function AuthProvider({ children }) {
   }, [token]);
 
   const registerDevicePushToken = async (authToken) => {
+    if (pushRegisteredRef.current) return true;
     if (!authToken) return;
     const expoPushToken = await getExpoPushTokenSafe();
-    if (!expoPushToken) return;
+    if (!expoPushToken) return false;
     await apiFetch('/mobile/push-token', {
       method: 'POST',
       token: authToken,
       body: { expoPushToken, platform: Platform.OS }
     });
+    pushRegisteredRef.current = true;
+    return true;
+  };
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const registerDevicePushTokenWithRetry = async (authToken) => {
+    const delays = [0, 3000, 8000];
+    for (const delay of delays) {
+      if (delay > 0) await sleep(delay);
+      try {
+        const ok = await registerDevicePushToken(authToken);
+        if (ok) return true;
+      } catch {
+        // retry next round
+      }
+    }
+    return false;
   };
 
   return (

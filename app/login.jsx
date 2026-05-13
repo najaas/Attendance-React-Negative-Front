@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView
@@ -7,22 +7,28 @@ import { useRouter } from 'expo-router';
 import { useAuth } from './providers/AuthProvider';
 
 export default function Login() {
-  const { login, sessionExpired } = useAuth();
+  const { login, sessionExpired, token, loading } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({ username: '', password: '' });
-  const [loading, setLoading] = useState(false);
+  const [loadingState, setLoadingState] = useState(false);
   const [err, setErr] = useState('');
   const [showPass, setShowPass] = useState(false);
+
+  useEffect(() => {
+    if (!loading && token) {
+      router.replace('/(tabs)');
+    }
+  }, [token, loading]);
 
   const handle = async () => {
     setErr('');
     if (!form.username || !form.password) { setErr('Username and password are required'); return; }
-    setLoading(true);
+    setLoadingState(true);
     try {
       await login(form.username, form.password);
       router.replace('/(tabs)');
     } catch (e) { setErr(e.message || 'Login failed'); }
-    finally { setLoading(false); }
+    finally { setLoadingState(false); }
   };
 
   return (
@@ -65,8 +71,8 @@ export default function Login() {
 
             {err ? <View style={s.errorBox}><Text style={s.errorText}>{err}</Text></View> : null}
 
-            <TouchableOpacity style={[s.loginBtn, loading && { opacity: 0.7 }]} onPress={handle} disabled={loading}>
-              {loading ? <ActivityIndicator color="#0f172a" /> : <Text style={s.loginBtnText}>Sign In</Text>}
+            <TouchableOpacity style={[s.loginBtn, loadingState && { opacity: 0.7 }]} onPress={handle} disabled={loadingState}>
+              {loadingState ? <ActivityIndicator color="#0f172a" /> : <Text style={s.loginBtnText}>Sign In</Text>}
             </TouchableOpacity>
           </View>
 
