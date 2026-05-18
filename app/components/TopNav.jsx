@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { name: 'Home', icon: 'home', href: '/(tabs)' },
   { name: 'Attendance', icon: 'time', href: '/(tabs)/attendance' },
   { name: 'Schedule', icon: 'calendar', href: '/(tabs)/schedule' },
+  { name: 'FSR', icon: 'document-attach', href: '/(tabs)/fsr' },
   { name: 'Tasks', icon: 'checkmark-done', href: '/(tabs)/tasks' },
   { name: 'History', icon: 'document-text', href: '/(tabs)/history' },
 ];

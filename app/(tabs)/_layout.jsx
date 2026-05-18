@@ -10,6 +10,7 @@ const iconMap = {
   index: 'home',
   attendance: 'time',
   schedule: 'calendar',
+  fsr: 'document-attach',
   tasks: 'checkmark-done',
   history: 'document-text'
 };
@@ -43,6 +44,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="index" options={{ title: 'Home' }} />
         <Tabs.Screen name="attendance" options={{ title: 'Attendance' }} />
         <Tabs.Screen name="schedule" options={{ title: 'Schedule' }} />
+        <Tabs.Screen name="fsr" options={{ title: 'FSR' }} />
         <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
         <Tabs.Screen name="history" options={{ title: 'History' }} />
       </Tabs>

@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Linking, Platform
+  StyleSheet, ActivityIndicator, Linking, Platform, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { useAuth } from '../providers/AuthProvider';
 import { apiFetch } from '../../lib/api';
 import { Redirect, Link } from 'expo-router';
+import { getExpoPushTokenSafe } from '../../lib/notifications';
 
 const C = {
   bg: '#f0f4f8',
@@ -30,6 +32,44 @@ export default function Home() {
   const { token, user, loading, logout } = useAuth();
   const [status, setStatus] = React.useState({ attendance: null, schedule: [], tasks: [] });
   const [busy, setBusy] = React.useState(false);
+  const [notifStatus, setNotifStatus] = useState('checking'); // 'checking' | 'granted' | 'denied' | 'enabling'
+
+  // Check notification permission on mount
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      const perm = await Notifications.getPermissionsAsync();
+      setNotifStatus(perm.status === 'granted' ? 'granted' : 'denied');
+    })();
+  }, [token]);
+
+  const handleEnableNotifications = async () => {
+    setNotifStatus('enabling');
+    const pushToken = await getExpoPushTokenSafe();
+    if (!pushToken) {
+      // Permission was denied — open system settings
+      Alert.alert(
+        'Enable Notifications',
+        'Please go to your phone Settings → Apps → AttendTrack → Notifications and turn them ON, then come back and log out and log in again.',
+        [{ text: 'Open Settings', onPress: () => Linking.openSettings() }, { text: 'Cancel' }]
+      );
+      setNotifStatus('denied');
+      return;
+    }
+    // We got the token — send it to server
+    try {
+      await apiFetch('/mobile/push-token', {
+        method: 'POST',
+        token,
+        body: { expoPushToken: pushToken, platform: Platform.OS }
+      });
+      setNotifStatus('granted');
+      Alert.alert('✅ Done!', 'Notifications enabled successfully. You will now receive schedule alerts.');
+    } catch (err) {
+      setNotifStatus('denied');
+      Alert.alert('Error', 'Could not save notification token: ' + err.message);
+    }
+  };
 
   const loadDashboard = useCallback(() => {
     if (!token) return;
@@ -135,6 +175,24 @@ export default function Home() {
           </View>
         </View>
       </View>
+
+      {/* Notification permission warning banner */}
+      {notifStatus === 'denied' && (
+        <TouchableOpacity style={s.notifBanner} onPress={handleEnableNotifications} activeOpacity={0.8}>
+          <Ionicons name="notifications-off" size={18} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={s.notifBannerTitle}>Notifications are OFF</Text>
+            <Text style={s.notifBannerSub}>Tap here to enable schedule alerts</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#fff" />
+        </TouchableOpacity>
+      )}
+      {notifStatus === 'enabling' && (
+        <View style={[s.notifBanner, { backgroundColor: '#0ea5e9' }]}>
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={[s.notifBannerTitle, { marginLeft: 8 }]}>Enabling notifications...</Text>
+        </View>
+      )}
 
       {busy && <ActivityIndicator color={C.blue} style={{ marginVertical: 10 }} />}
 
@@ -467,4 +525,13 @@ const s = StyleSheet.create({
     paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
   },
   mapBtnText: { color: C.blue, fontWeight: '800', fontSize: 11 },
+
+  notifBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 16, marginBottom: 14,
+    backgroundColor: '#ef4444', borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 13,
+  },
+  notifBannerTitle: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  notifBannerSub: { fontSize: 11, fontWeight: '600', color: '#fecaca', marginTop: 1 },
 });

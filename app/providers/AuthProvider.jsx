@@ -48,6 +48,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
+    // Safety timeout to ensure app doesn't hang on loading forever
+    const loadingTimeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 2500);
+
     loadToken()
       .then((savedToken) => {
         if (!mounted) return;
@@ -63,6 +68,7 @@ export function AuthProvider({ children }) {
         }
       })
       .finally(() => {
+        clearTimeout(loadingTimeout);
         if (mounted) setLoading(false);
       });
 
@@ -74,6 +80,8 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     setSessionExpired(false);
+    // Always reset push registration flag on new login so new employee gets registered
+    pushRegisteredRef.current = false;
     const data = await apiFetch('/login', { method: 'POST', body: { username, password } });
     if (data?.token) {
       const payload = decodeJwt(data.token);
@@ -82,8 +90,10 @@ export function AuthProvider({ children }) {
       setUser(payload);
       // NON-BLOCKING: Move registration to background so UI transition is instant
       setTimeout(() => {
-        registerDevicePushTokenWithRetry(data.token).catch(() => {});
-      }, 0);
+        registerDevicePushTokenWithRetry(data.token).catch((err) => {
+          console.error('[push] login retry chain failed:', err?.message);
+        });
+      }, 500);
 
       armExpiryTimer(payload);
     }
@@ -105,17 +115,35 @@ export function AuthProvider({ children }) {
   }, [token]);
 
   const registerDevicePushToken = async (authToken) => {
-    if (pushRegisteredRef.current) return true;
-    if (!authToken) return;
+    if (pushRegisteredRef.current) {
+      console.log('[push] already registered, skipping');
+      return true;
+    }
+    if (!authToken) {
+      console.log('[push] no auth token, cannot register');
+      return false;
+    }
+    console.log('[push] step 1: getting expo push token...');
     const expoPushToken = await getExpoPushTokenSafe();
-    if (!expoPushToken) return false;
-    await apiFetch('/mobile/push-token', {
-      method: 'POST',
-      token: authToken,
-      body: { expoPushToken, platform: Platform.OS }
-    });
-    pushRegisteredRef.current = true;
-    return true;
+    if (!expoPushToken) {
+      console.error('[push] step 1 FAILED: getExpoPushTokenSafe returned null. Check notification permissions and FCM setup.');
+      return false;
+    }
+    console.log('[push] step 1 OK: got token', expoPushToken.substring(0, 30) + '...');
+    console.log('[push] step 2: sending token to server...');
+    try {
+      const result = await apiFetch('/mobile/push-token', {
+        method: 'POST',
+        token: authToken,
+        body: { expoPushToken, platform: Platform.OS }
+      });
+      console.log('[push] step 2 OK: server response:', JSON.stringify(result));
+      pushRegisteredRef.current = true;
+      return true;
+    } catch (err) {
+      console.error('[push] step 2 FAILED: server rejected token:', err?.message);
+      throw err;
+    }
   };
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
